@@ -57,12 +57,12 @@ Current workflows frequently rely on spreadsheets, email threads, or shared dire
 
 ## 5. User Personas
 
-### Persona A: Inspector Sarah Jenkins (Lead Forensic Investigator)
+### Persona A: Forensic Investigator
 * **Context:** Works for a mid-sized corporate compliance department. Investigates internal fraud and data theft.
 * **Goals:** Collect evidence from employee laptops, secure it immediately, and present a bulletproof timeline of custody to external legal counsel.
 * **Frustrations:** Struggles with shared folders where IT personnel accidentally modify file timestamps, risking evidence admissibility.
 
-### Persona B: Attorney David Vance (Corporate Counsel)
+### Persona B: Corporate Counsel
 * **Context:** Defends or prosecutes corporate policy infractions in internal hearings or civil court.
 * **Goals:** Quick access to the verification history of any document and a clean, printed PDF report summarizing who touched a file and when.
 * **Frustrations:** Needs simple, non-technical explanations of file integrity (e.g., "The hash matches the upload hash") rather than raw database logs.
@@ -71,12 +71,12 @@ Current workflows frequently rely on spreadsheets, email threads, or shared dire
 
 ## 6. User Stories
 
-1. **As an Investigator (Sarah),** I want to create a new Case in TRACE so that I can group related files and maintain a clean context for an active investigation.
-2. **As an Investigator (Sarah),** I want to upload digital evidence files (e.g., PDFs, images) and have the system calculate a SHA-256 hash immediately so that I have a cryptographic record of the file's exact state at the moment of collection.
-3. **As an Investigator (Sarah),** I want to transfer custody of an evidence file to another investigator in the system so that custody handoffs are explicitly recorded.
-4. **As an Auditor or Attorney (David),** I want to view a chronological timeline of a case's custody history so that I can audit exactly who had access to the evidence.
-5. **As an Auditor (David),** I want to click a single "Verify Integrity" button on a file so that I can prove the file has not been altered or deleted since ingestion.
-6. **As an Investigator (Sarah),** I want to export a certified PDF custody report and a complete evidence bundle (ZIP) so that I can present them to law enforcement or court representatives.
+1. **As an Investigator ** I want to create a new Case in TRACE so that I can group related files and maintain a clean context for an active investigation.
+2. **As an Investigator ** I want to upload digital evidence files (e.g., PDFs, images) and have the system calculate a SHA-256 hash immediately so that I have a cryptographic record of the file's exact state at the moment of collection.
+3. **As an Investigator ** I want to transfer custody of an evidence file to another investigator in the system so that custody handoffs are explicitly recorded.
+4. **As an Auditor or Attorney ** I want to view a chronological timeline of a case's custody history so that I can audit exactly who had access to the evidence.
+5. **As an Auditor ** I want to click a single "Verify Integrity" button on a file so that I can prove the file has not been altered or deleted since ingestion.
+6. **As an Investigator ** I want to export a certified PDF custody report and a complete evidence bundle (ZIP) so that I can present them to law enforcement or court representatives.
 
 ---
 
