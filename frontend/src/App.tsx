@@ -91,8 +91,20 @@ export default function App() {
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"catalog" | "timeline">("catalog");
+  const [activeTab, setActiveTab] = useState<"catalog" | "timeline" | "ai_hub">("catalog");
   const [showSimulationPanel, setShowSimulationPanel] = useState(false);
+
+  // AI Insights State
+  const [aiInsights, setAiInsights] = useState<{
+    summary: { executive_summary: string; key_events: any[]; important_entities: any[] } | null;
+    entities: Array<{ id: string; entity_type: string; entity_value: string; evidence_id: string | null; original_filename: string | null }>;
+    timeline: Array<{ id: string; description: string; event_timestamp: string; confidence: string; supporting_evidence_ids: string[] }>;
+  }>({ summary: null, entities: [], timeline: [] });
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [semanticQuery, setSemanticQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedEntityFilter, setSelectedEntityFilter] = useState<string | null>(null);
 
   // Form States
   const [investigatorName, setInvestigatorName] = useState("Investigator Alpha");
@@ -126,12 +138,83 @@ export default function App() {
   useEffect(() => {
     if (selectedCaseId) {
       fetchCaseDetails(selectedCaseId);
+      fetchAiInsights(selectedCaseId);
       setAuditResult(null);
       setHasAudited(false);
+      setSearchResults(null);
+      setSemanticQuery("");
+      setSelectedEntityFilter(null);
     } else {
       setCaseDetails(null);
+      setAiInsights({ summary: null, entities: [], timeline: [] });
     }
   }, [selectedCaseId]);
+
+  const fetchAiInsights = async (caseId: string) => {
+    setIsAiLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/cases/${caseId}/ai-insights`);
+      const json = await res.json();
+      if (json.success) {
+        setAiInsights(json.data);
+      }
+    } catch (err) {
+      console.error("Error fetching AI insights:", err);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleGenerateTimeline = async () => {
+    if (!selectedCaseId) return;
+    setIsAiLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-timeline`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        await fetchAiInsights(selectedCaseId);
+        alert("AI Forensic Timeline generated successfully!");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleGenerateSummary = async () => {
+    if (!selectedCaseId) return;
+    setIsAiLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-summarize`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        await fetchAiInsights(selectedCaseId);
+        alert("AI Case Summary generated successfully!");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleSemanticSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCaseId || !semanticQuery.trim()) return;
+    setIsSearching(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-search?q=${encodeURIComponent(semanticQuery)}`);
+      const json = await res.json();
+      if (json.success) {
+        setSearchResults(json.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const fetchCases = async () => {
     try {
@@ -669,6 +752,17 @@ export default function App() {
                 >
                   Audit Timeline ({caseDetails.logs.length})
                 </button>
+                <button
+                  onClick={() => setActiveTab("ai_hub")}
+                  className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center space-x-1.5 ${
+                    activeTab === "ai_hub"
+                      ? "border-emerald-500 text-emerald-400"
+                      : "border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-450" />
+                  <span>AI Evidence Intelligence</span>
+                </button>
               </div>
 
               {showSimulationPanel && (
@@ -873,7 +967,7 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                ) : (
+                ) : activeTab === "timeline" ? (
                   <div className="space-y-6 max-w-3xl mx-auto">
                     <div className="bg-[#0b132b]/20 p-5 rounded-2xl border border-slate-800 flex items-center space-x-4">
                       <ShieldCheck className="w-8 h-8 text-emerald-450 flex-shrink-0" />
@@ -935,7 +1029,7 @@ export default function App() {
                                   <span className="block font-semibold text-slate-550 uppercase tracking-wider">
                                     Previous Log Block Hash
                                   </span>
-                                  <span className="font-mono text-slate-450 block truncate" title={log.prev_log_hash}>
+                                  <span className="font-mono text-slate-455 block truncate" title={log.prev_log_hash}>
                                     {log.prev_log_hash}
                                   </span>
                                 </div>
@@ -969,6 +1063,295 @@ export default function App() {
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6 max-w-7xl mx-auto">
+                    {/* 1. SEMANTIC SEARCH SECTION */}
+                    <div className="bg-[#0b132b]/30 p-6 rounded-2xl border border-slate-800">
+                      <h3 className="text-sm font-bold text-slate-200 flex items-center space-x-2 mb-3">
+                        <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+                        <span>Semantic & Natural Language Query</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mb-4 font-medium leading-relaxed">
+                        Query case data using everyday language (e.g. <i>"Find payment references to Jessy"</i> or <i>"Show transaction records mentioning 5000 rupees"</i>). Powered by Gemini vector embeddings and pgvector cosine search.
+                      </p>
+                      <form onSubmit={handleSemanticSearch} className="flex space-x-3">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
+                          <input
+                            type="text"
+                            placeholder="Ask natural language questions..."
+                            value={semanticQuery}
+                            onChange={(e) => setSemanticQuery(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 font-medium"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={isSearching}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-indigo-600/15 cursor-pointer disabled:opacity-50"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>{isSearching ? "Analyzing..." : "Query Case"}</span>
+                        </button>
+                      </form>
+
+                      {/* Search Results */}
+                      {searchResults !== null && (
+                        <div className="mt-6 border-t border-slate-800/60 pt-4 space-y-4">
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                              Semantic Matches ({searchResults.length})
+                            </h4>
+                            <button
+                              onClick={() => {
+                                setSearchResults(null);
+                                setSemanticQuery("");
+                              }}
+                              className="text-xs font-bold text-rose-455 hover:text-rose-500"
+                            >
+                              Clear Results
+                            </button>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {searchResults.map((res, idx) => (
+                              <div
+                                key={idx}
+                                className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/45 space-y-2 hover:border-slate-700/85 transition-all"
+                              >
+                                <div className="flex justify-between items-start">
+                                  <span className="text-[10px] font-mono text-emerald-450 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 font-bold truncate max-w-[200px]">
+                                    {res.filename}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
+                                    {(res.similarity * 100).toFixed(1)}% Match
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-350 leading-relaxed font-semibold italic">
+                                  "{res.snippet}"
+                                </p>
+                                <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+                                  Source type: {res.content_type}
+                                </div>
+                              </div>
+                            ))}
+                            {searchResults.length === 0 && (
+                              <div className="text-center py-6 text-xs text-slate-500 col-span-2">
+                                No semantic matches found for your query. Try different terms.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. SPLIT LAYOUT: SUMMARY & ENTITIES VS TIMELINE */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      
+                      {/* Left side: Case summary & Entities (Col span 5) */}
+                      <div className="lg:col-span-5 space-y-6">
+                        
+                        {/* Executive Summary */}
+                        <div className="bg-[#070d1e]/85 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between items-center mb-3">
+                              <h3 className="text-xs font-semibold text-slate-450 uppercase tracking-wider">
+                                Executive Summary
+                              </h3>
+                              <button
+                                onClick={handleGenerateSummary}
+                                disabled={isAiLoading}
+                                className="text-[10px] font-bold text-emerald-400 hover:text-emerald-500 flex items-center space-x-1"
+                              >
+                                <RefreshCw className={`w-3 h-3 ${isAiLoading ? "animate-spin" : ""}`} />
+                                <span>Recompile</span>
+                              </button>
+                            </div>
+
+                            {aiInsights.summary ? (
+                              <div className="space-y-4">
+                                <p className="text-xs text-slate-350 leading-relaxed font-semibold whitespace-pre-wrap">
+                                  {aiInsights.summary.executive_summary}
+                                </p>
+                                
+                                {aiInsights.summary.important_entities.length > 0 && (
+                                  <div className="border-t border-slate-800/80 pt-3">
+                                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                      Identified Key Actors / Roles
+                                    </h4>
+                                    <div className="space-y-1.5">
+                                      {aiInsights.summary.important_entities.map((item, idx) => (
+                                        <div key={idx} className="text-xs text-slate-350 flex justify-between font-medium">
+                                          <span className="font-bold text-slate-200">{item.name}</span>
+                                          <span className="text-slate-500">{item.role_or_details}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-center py-8">
+                                <Sparkles className="w-8 h-8 text-slate-700 mx-auto mb-2" />
+                                <p className="text-xs text-slate-500 mb-3">No summary has been compiled yet.</p>
+                                <button
+                                  onClick={handleGenerateSummary}
+                                  className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold py-1.5 px-3 rounded-lg"
+                                >
+                                  Compile Case Summary
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Entities Dictionary */}
+                        <div className="bg-[#070d1e]/85 p-5 rounded-2xl border border-slate-800">
+                          <h3 className="text-xs font-semibold text-slate-455 uppercase tracking-wider mb-3">
+                            Extracted Forensic Entities
+                          </h3>
+                          <p className="text-[10px] text-slate-500 mb-4 leading-relaxed font-semibold">
+                            Extracted automatically from uploaded documents/images. Click on any entity filter badge to filter timeline events.
+                          </p>
+
+                          {aiInsights.entities.length > 0 ? (
+                            <div className="space-y-4">
+                              {/* Group entities by type */}
+                              {["NAME", "PHONE", "EMAIL", "UPI_ID", "TXN_ID", "ORGANIZATION"].map((type) => {
+                                const group = aiInsights.entities.filter((e) => e.entity_type === type);
+                                if (group.length === 0) return null;
+
+                                return (
+                                  <div key={type} className="space-y-1.5">
+                                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">
+                                      {type === "UPI_ID" ? "UPI Payments" : type === "TXN_ID" ? "Transaction References" : type + "S"}
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {Array.from(new Set(group.map((e) => e.entity_value))).map((val, idx) => {
+                                        const isSelected = selectedEntityFilter === val;
+                                        return (
+                                          <button
+                                            key={idx}
+                                            onClick={() => setSelectedEntityFilter(isSelected ? null : val)}
+                                            className={`text-[10px] font-semibold font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${
+                                              isSelected
+                                                ? "bg-emerald-500/20 border-emerald-500 text-emerald-350 font-bold"
+                                                : "bg-slate-955/60 border-slate-808/80 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                                            }`}
+                                          >
+                                            {val}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-center py-6 text-xs text-slate-500 italic">
+                              No entities extracted yet. Upload image/document files to run OCR analysis.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right side: Interactive Timeline (Col span 7) */}
+                      <div className="lg:col-span-7 space-y-6">
+                        <div className="bg-[#070d1e]/85 p-5 rounded-2xl border border-slate-800">
+                          <div className="flex justify-between items-center mb-4">
+                            <div>
+                              <h3 className="text-xs font-semibold text-slate-455 uppercase tracking-wider">
+                                Automated Case Investigation Timeline
+                              </h3>
+                              <p className="text-[10px] text-slate-550 mt-1 font-semibold">
+                                Chronological sequence of actions/events found inside case files and custody activity.
+                              </p>
+                            </div>
+                            <button
+                              onClick={handleGenerateTimeline}
+                              disabled={isAiLoading}
+                              className="text-[10px] font-bold text-emerald-400 hover:text-emerald-500 flex items-center space-x-1"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${isAiLoading ? "animate-spin" : ""}`} />
+                              <span>Rebuild</span>
+                            </button>
+                          </div>
+
+                          {aiInsights.timeline.length > 0 ? (
+                            <div className="relative border-l border-slate-800 ml-3 pl-6 space-y-5 py-2">
+                              {aiInsights.timeline
+                                .filter((ev) => !selectedEntityFilter || ev.description.toLowerCase().includes(selectedEntityFilter.toLowerCase()))
+                                .map((ev, idx) => {
+                                  const confidenceColor =
+                                    ev.confidence === "HIGH"
+                                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                      : ev.confidence === "MEDIUM"
+                                      ? "bg-amber-500/10 border-amber-500/20 text-amber-450"
+                                      : "bg-rose-500/10 border-rose-500/20 text-rose-450";
+
+                                  return (
+                                    <div key={idx} className="relative group">
+                                      <div className="absolute -left-[31px] top-1.5 w-2 h-2 rounded-full border border-emerald-500 bg-slate-950 group-hover:scale-125 transition-transform" />
+                                      <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/25 hover:border-slate-700 transition-all space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-[10px] font-bold text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-lg">
+                                            {new Date(ev.event_timestamp).toUTCString()}
+                                          </span>
+                                          <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${confidenceColor}`}>
+                                            {ev.confidence || "MEDIUM"} Confidence
+                                          </span>
+                                        </div>
+                                        <p className="text-xs text-slate-300 font-semibold leading-relaxed">
+                                          {ev.description}
+                                        </p>
+                                        
+                                        {ev.supporting_evidence_ids && ev.supporting_evidence_ids.length > 0 && (
+                                          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-900/60 mt-2">
+                                            <span className="text-[9px] font-bold text-slate-550 uppercase block tracking-wider mr-1">
+                                              SUPPORTING EVIDENCE:
+                                            </span>
+                                            {ev.supporting_evidence_ids.map((refId) => {
+                                              const fileMatch = caseDetails.evidence.find((e) => e.id === refId);
+                                              return (
+                                                <span
+                                                  key={refId}
+                                                  className="text-[9px] font-mono text-emerald-450 font-bold bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 max-w-[150px] truncate"
+                                                  title={fileMatch?.original_filename || refId}
+                                                >
+                                                  {fileMatch?.original_filename || refId.substring(0, 8) + "..."}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              {aiInsights.timeline.filter((ev) => !selectedEntityFilter || ev.description.toLowerCase().includes(selectedEntityFilter.toLowerCase())).length === 0 && (
+                                <div className="text-center py-6 text-xs text-slate-500">
+                                  No timeline events match the selected entity filter badge.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <Sparkles className="w-8 h-8 text-slate-700 mx-auto mb-2" />
+                              <p className="text-xs text-slate-500 mb-3">No timeline records have been analyzed.</p>
+                              <button
+                                onClick={handleGenerateTimeline}
+                                className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold py-1.5 px-3 rounded-lg"
+                              >
+                                Build Forensic Timeline
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                     </div>
                   </div>
                 )}

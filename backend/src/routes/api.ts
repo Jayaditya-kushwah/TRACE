@@ -10,6 +10,8 @@ import { fileURLToPath } from "url";
 import PDFDocument from "pdfkit";
 import * as archiverModule from "archiver";
 import { v4 as uuidv4 } from "uuid";
+import { aiQueue } from "../utils/queue.js";
+import { AIService } from "../services/aiService.js";
 
 const archiver = ((archiverModule as any).default || archiverModule) as any;
 
@@ -137,6 +139,9 @@ router.post("/cases/:id/evidence", upload.single("file"), async (req, res, next)
       file.size,
       uploaded_by
     );
+
+    // Enqueue background AI analysis job
+    aiQueue.enqueue(id, newEvidence.id);
 
     res.status(201).json({ success: true, data: newEvidence });
   } catch (error) {
@@ -838,6 +843,116 @@ router.post("/simulate/seed-demo", async (req, res, next) => {
     next(error);
   } finally {
     client.release();
+  }
+});
+
+// =========================================================================
+// AI INTEGRATION ENDPOINTS
+// =========================================================================
+
+// 1. Get Case AI insights (Summary, Entities, Automated Forensic Timeline)
+router.get("/cases/:id/ai-insights", async (req, res, next) => {
+  try {
+    const id = req.params.id as string;
+    
+    // Fetch Summary
+    const summaryRes = await pool.query(
+      "SELECT summary_content FROM case_summaries WHERE case_id = $1",
+      [id]
+    );
+    const summary = summaryRes.rows[0]?.summary_content || null;
+
+    // Fetch Entities
+    const entitiesRes = await pool.query(
+      `SELECT ee.id, ee.entity_type, ee.entity_value, ee.evidence_id, e.original_filename
+       FROM extracted_entities ee
+       LEFT JOIN evidence e ON ee.evidence_id = e.id
+       WHERE ee.case_id = $1`,
+      [id]
+    );
+    const entities = entitiesRes.rows;
+
+    // Fetch Timeline
+    const timelineRes = await pool.query(
+      `SELECT id, description, event_timestamp, confidence, supporting_evidence_ids
+       FROM investigation_timeline_events
+       WHERE case_id = $1
+       ORDER BY event_timestamp ASC`,
+      [id]
+    );
+    const timeline = timelineRes.rows;
+
+    res.json({
+      success: true,
+      data: {
+        summary,
+        entities,
+        timeline
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 2. Trigger AI Timeline Generation Manually
+router.post("/cases/:id/ai-timeline", async (req, res, next) => {
+  try {
+    const id = req.params.id as string;
+    console.log(`Manually triggering AI Timeline generation for case ${id}`);
+    const timelineEvents = await AIService.generateTimeline(id);
+    await AIService.saveTimelineEvents(id, timelineEvents);
+
+    // Save embeddings for timeline events
+    for (const ev of timelineEvents) {
+      const eventText = `Timeline Event: ${ev.description} (Timestamp: ${ev.event_timestamp}, Confidence: ${ev.confidence})`;
+      const evEmbedding = await AIService.generateEmbedding(eventText);
+      await pool.query(
+        `INSERT INTO evidence_embeddings (case_id, evidence_id, content_type, raw_content, embedding)
+         VALUES ($1, NULL, 'TIMELINE_EVENT', $2, $3::vector)`,
+        [id, eventText, `[${evEmbedding.join(",")}]`]
+      );
+    }
+
+    res.json({ success: true, data: timelineEvents });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 3. Trigger AI Case Summary Generation Manually
+router.post("/cases/:id/ai-summarize", async (req, res, next) => {
+  try {
+    const id = req.params.id as string;
+    console.log(`Manually triggering AI Summary generation for case ${id}`);
+    const summaryObj = await AIService.generateCaseSummary(id);
+    await AIService.saveCaseSummary(id, summaryObj);
+
+    // Save summary embedding
+    const summaryText = `Case Summary Executive Summary:\n${summaryObj.executive_summary}`;
+    const summaryEmbedding = await AIService.generateEmbedding(summaryText);
+    await AIService.saveEmbedding(id, null, "CASE_SUMMARY", summaryText, summaryEmbedding);
+
+    res.json({ success: true, data: summaryObj });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 4. Semantic Search across OCR, summaries, and timeline events
+router.get("/cases/:id/ai-search", async (req, res, next) => {
+  try {
+    const id = req.params.id as string;
+    const query = req.query.q as string;
+
+    if (!query) {
+      return res.status(400).json({ success: false, error: "Missing query parameter 'q'" });
+    }
+
+    const results = await AIService.searchSemantic(id, query, 10);
+    res.json({ success: true, data: results });
+  } catch (error) {
+    next(error);
   }
 });
 
