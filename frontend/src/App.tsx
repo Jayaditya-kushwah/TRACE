@@ -360,6 +360,25 @@ export default function App() {
     }
   };
 
+  const handleSeedDemoCase = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/simulate/seed-demo`, {
+        method: "POST",
+      });
+      const json = await res.json();
+      if (json.success) {
+        await fetchCases();
+        setSelectedCaseId(json.case_id);
+        alert("Demo Case (Operation Phantom Exfil) seeded successfully!");
+      } else {
+        alert("Failed to seed demo case");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error seeding demo case");
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedHash(text);
@@ -509,10 +528,17 @@ export default function App() {
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-slate-800 space-y-2">
+          <button
+            onClick={handleSeedDemoCase}
+            className="w-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-emerald-400 font-semibold py-2 px-4 rounded-xl flex items-center justify-center space-x-2 text-xs transition-all cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Seed Demo Case</span>
+          </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center space-x-2 text-sm shadow-lg shadow-emerald-500/15"
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center space-x-2 text-sm shadow-lg shadow-emerald-500/15 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Create Case File</span>
@@ -963,13 +989,22 @@ export default function App() {
             <p className="text-sm text-slate-500 max-w-sm mt-2 mb-6 leading-relaxed font-semibold">
               Select an ongoing digital investigation from the sidebar list, or initialize a new case file structure to upload evidence.
             </p>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold py-2 px-6 rounded-xl flex items-center space-x-2 text-sm shadow-lg shadow-emerald-500/10"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Open New Case</span>
-            </button>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={handleSeedDemoCase}
+                className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-emerald-400 font-semibold py-2 px-6 rounded-xl flex items-center space-x-2 text-sm transition-all cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Seed Demo Case</span>
+              </button>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold py-2 px-6 rounded-xl flex items-center space-x-2 text-sm shadow-lg shadow-emerald-500/10 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Open New Case</span>
+              </button>
+            </div>
           </div>
         )}
       </main>

@@ -2,12 +2,14 @@ import { Router } from "express";
 import multer from "multer";
 import { CustodyService } from "../services/custodyService.js";
 import { pool } from "../db/index.js";
+import { calculateFileHash, calculateLogHash } from "../utils/crypto.js";
 import path from "path";
 import fs from "fs";
 import os from "os";
 import { fileURLToPath } from "url";
 import PDFDocument from "pdfkit";
 import * as archiverModule from "archiver";
+import { v4 as uuidv4 } from "uuid";
 
 const archiver = ((archiverModule as any).default || archiverModule) as any;
 
@@ -671,6 +673,171 @@ router.post("/simulate/restore", async (req, res, next) => {
     res.json({ success: true, message: "Case data and log chain successfully restored to pristine state" });
   } catch (error) {
     next(error);
+  }
+});
+
+// 5. Seed Demo Case File
+router.post("/simulate/seed-demo", async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Create Case
+    const caseId = uuidv4();
+    const referenceId = "CRIM-2026-X89";
+    const title = "Operation Phantom Exfil";
+    const description = "Investigation into intellectual property theft at Quantum Tech. Forensic analysis of suspect laptop image and encrypted USB drive backups indicating exfiltration of source code and employee registry database.";
+    const createdBy = "Special Agent Miller";
+
+    const caseQuery = `
+      INSERT INTO cases (id, reference_id, title, description, created_by)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `;
+    await client.query(caseQuery, [caseId, referenceId, title, description, createdBy]);
+
+    // 2. Genesis Log
+    const log1Id = uuidv4();
+    const details1 = "Case file initialized for Operation Phantom Exfil.";
+    const prevHash1 = "0000000000000000000000000000000000000000000000000000000000000000";
+    const logHash1 = calculateLogHash({
+      id: log1Id,
+      case_id: caseId,
+      evidence_id: null,
+      action_type: "CASE_CREATED",
+      actor: createdBy,
+      details: details1,
+      prev_log_hash: prevHash1,
+    });
+    
+    await client.query(`
+      INSERT INTO custody_logs (id, case_id, evidence_id, action_type, actor, details, prev_log_hash, log_hash)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [log1Id, caseId, null, "CASE_CREATED", createdBy, details1, prevHash1, logHash1]);
+
+    // Create case uploads dir
+    const caseUploadsDir = path.join(UPLOADS_DIR, caseId);
+    if (!fs.existsSync(caseUploadsDir)) {
+      fs.mkdirSync(caseUploadsDir, { recursive: true });
+    }
+
+    // Helper to add mock evidence
+    const addMockEvidenceHelper = async (params: {
+      id: string;
+      filename: string;
+      mimeType: string;
+      fileContent: string;
+      uploadedBy: string;
+      uploadDetails: string;
+      prevHash: string;
+    }) => {
+      const filePath = path.join(caseUploadsDir, params.id);
+      fs.writeFileSync(filePath, params.fileContent);
+      fs.chmodSync(filePath, 0o644);
+      const fileHash = await calculateFileHash(filePath);
+      const stats = fs.statSync(filePath);
+
+      await client.query(`
+        INSERT INTO evidence (id, case_id, original_filename, stored_filename, file_size_bytes, mime_type, sha256_hash, uploaded_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [params.id, caseId, params.filename, params.id, stats.size, params.mimeType, fileHash, params.uploadedBy]);
+
+      const logId = uuidv4();
+      const logHash = calculateLogHash({
+        id: logId,
+        case_id: caseId,
+        evidence_id: params.id,
+        action_type: "EVIDENCE_UPLOADED",
+        actor: params.uploadedBy,
+        details: params.uploadDetails.replace("{HASH}", fileHash.substring(0, 8)),
+        prev_log_hash: params.prevHash,
+      });
+
+      await client.query(`
+        INSERT INTO custody_logs (id, case_id, evidence_id, action_type, actor, details, prev_log_hash, log_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [logId, caseId, params.id, "EVIDENCE_UPLOADED", params.uploadedBy, params.uploadDetails.replace("{HASH}", fileHash.substring(0, 8)), params.prevHash, logHash]);
+
+      return { fileHash, logHash };
+    };
+
+    // 3. Add Evidence 1: Suspect Registry Backup
+    const ev1Id = uuidv4();
+    const ev1Res = await addMockEvidenceHelper({
+      id: ev1Id,
+      filename: "suspect_registry_backup.db",
+      mimeType: "application/octet-stream",
+      fileContent: "[Forensic Database Registry Backup - Suspect Laptop Partition X-100]",
+      uploadedBy: "Special Agent Miller",
+      uploadDetails: "Registry database retrieved from suspect's laptop (Model: X-100) during warrant execution. File hash: {HASH}...",
+      prevHash: logHash1,
+    });
+
+    // 4. Transfer Evidence 1
+    const log3Id = uuidv4();
+    const details3 = "Transferred to Analyst Jessy Beta for partition analysis and registry key decoding.";
+    const logHash3 = calculateLogHash({
+      id: log3Id,
+      case_id: caseId,
+      evidence_id: ev1Id,
+      action_type: "CUSTODY_TRANSFERRED",
+      actor: "Special Agent Miller",
+      details: details3,
+      prev_log_hash: ev1Res.logHash,
+    });
+    await client.query(`
+      INSERT INTO custody_logs (id, case_id, evidence_id, action_type, actor, details, prev_log_hash, log_hash)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [log3Id, caseId, ev1Id, "CUSTODY_TRANSFERRED", "Special Agent Miller", details3, ev1Res.logHash, logHash3]);
+
+    // 5. Add Evidence 2: Quantum Source Code ZIP
+    const ev2Id = uuidv4();
+    const ev2Res = await addMockEvidenceHelper({
+      id: ev2Id,
+      filename: "quantum_source_code.zip",
+      mimeType: "application/zip",
+      fileContent: "[Mock Compressed Archive containing exfiltrated core proprietary source code repository]",
+      uploadedBy: "Analyst Jessy Beta",
+      uploadDetails: "Source code ZIP archive recovered from hidden partition during forensic imaging. File hash: {HASH}...",
+      prevHash: logHash3,
+    });
+
+    // 6. Add Evidence 3: Product Blueprint Image
+    const ev3Id = uuidv4();
+    const ev3Res = await addMockEvidenceHelper({
+      id: ev3Id,
+      filename: "confidential_product_blueprint.png",
+      mimeType: "image/png",
+      fileContent: "[Forensic PNG Image Buffer representing stolen schematic blueprint blueprint.png]",
+      uploadedBy: "Analyst Jessy Beta",
+      uploadDetails: "Schematic image found in the deleted files buffer of the suspect drive. File hash: {HASH}...",
+      prevHash: ev2Res.logHash,
+    });
+
+    // 7. Transfer Evidence 3
+    const log6Id = uuidv4();
+    const details6 = "Transferred to Officer Davis at vault room B for secure physical storage before trial.";
+    const logHash6 = calculateLogHash({
+      id: log6Id,
+      case_id: caseId,
+      evidence_id: ev3Id,
+      action_type: "CUSTODY_TRANSFERRED",
+      actor: "Analyst Jessy Beta",
+      details: details6,
+      prev_log_hash: ev3Res.logHash,
+    });
+    await client.query(`
+      INSERT INTO custody_logs (id, case_id, evidence_id, action_type, actor, details, prev_log_hash, log_hash)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [log6Id, caseId, ev3Id, "CUSTODY_TRANSFERRED", "Analyst Jessy Beta", details6, ev3Res.logHash, logHash6]);
+
+    await client.query("COMMIT");
+    res.json({ success: true, case_id: caseId });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    next(error);
+  } finally {
+    client.release();
   }
 });
 
