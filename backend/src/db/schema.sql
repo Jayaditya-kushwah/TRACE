@@ -55,7 +55,15 @@ END
 $$;
 
 -- Grant permissions (restricted to SELECT, INSERT, UPDATE only)
-GRANT CONNECT ON DATABASE trace TO trace_user;
+DO $$
+BEGIN
+    EXECUTE 'GRANT CONNECT ON DATABASE ' || quote_ident(current_database()) || ' TO trace_user';
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Could not grant connect permissions on current database to trace_user';
+END
+$$;
+
 GRANT USAGE ON SCHEMA public TO trace_user;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO trace_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO trace_user;

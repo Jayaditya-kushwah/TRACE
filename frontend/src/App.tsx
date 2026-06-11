@@ -23,6 +23,8 @@ import {
   User
 } from "lucide-react";
 
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || "";
+
 interface Case {
   id: string;
   reference_id: string;
@@ -133,7 +135,7 @@ export default function App() {
 
   const fetchCases = async () => {
     try {
-      const res = await fetch("/api/cases");
+      const res = await fetch(`${API_BASE}/api/cases`);
       const json = await res.json();
       if (json.success) {
         setCases(json.data);
@@ -145,7 +147,7 @@ export default function App() {
 
   const fetchCaseDetails = async (caseId: string) => {
     try {
-      const res = await fetch(`/api/cases/${caseId}`);
+      const res = await fetch(`${API_BASE}/api/cases/${caseId}`);
       const json = await res.json();
       if (json.success) {
         setCaseDetails(json.data);
@@ -158,7 +160,7 @@ export default function App() {
   const handleCreateCase = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/cases", {
+      const res = await fetch(`${API_BASE}/api/cases`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -185,7 +187,7 @@ export default function App() {
     e.preventDefault();
     if (!transferTargetEvidence) return;
     try {
-      const res = await fetch(`/api/evidence/${transferTargetEvidence.id}/transfer`, {
+      const res = await fetch(`${API_BASE}/api/evidence/${transferTargetEvidence.id}/transfer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -217,7 +219,7 @@ export default function App() {
     if (!selectedCaseId) return;
     setIsAuditLoading(true);
     try {
-      const res = await fetch(`/api/cases/${selectedCaseId}/verify`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/verify`, { method: "POST" });
       const json = await res.json();
       if (json.success) {
         setAuditResult(json.data);
@@ -239,7 +241,7 @@ export default function App() {
     formData.append("uploaded_by", investigatorName);
 
     try {
-      const res = await fetch(`/api/cases/${selectedCaseId}/evidence`, {
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/evidence`, {
         method: "POST",
         body: formData
       });
@@ -288,7 +290,7 @@ export default function App() {
   const simulateFileTampering = async (evidenceId: string) => {
     if (!selectedCaseId) return;
     try {
-      const res = await fetch("/api/simulate/tamper-file", {
+      const res = await fetch(`${API_BASE}/api/simulate/tamper-file`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ case_id: selectedCaseId, evidence_id: evidenceId })
@@ -305,7 +307,7 @@ export default function App() {
 
   const simulateDbHashTampering = async (evidenceId: string) => {
     try {
-      const res = await fetch("/api/simulate/tamper-db-hash", {
+      const res = await fetch(`${API_BASE}/api/simulate/tamper-db-hash`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ evidence_id: evidenceId })
@@ -323,7 +325,7 @@ export default function App() {
   const simulateLogChainTampering = async (logId: string) => {
     if (!selectedCaseId) return;
     try {
-      const res = await fetch("/api/simulate/tamper-log-chain", {
+      const res = await fetch(`${API_BASE}/api/simulate/tamper-log-chain`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ case_id: selectedCaseId, log_id: logId })
@@ -341,7 +343,7 @@ export default function App() {
   const restoreCaseIntegrity = async () => {
     if (!selectedCaseId) return;
     try {
-      const res = await fetch("/api/simulate/restore", {
+      const res = await fetch(`${API_BASE}/api/simulate/restore`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ case_id: selectedCaseId })
@@ -559,7 +561,7 @@ export default function App() {
                 </button>
 
                 <a
-                  href={`/api/cases/${caseDetails.id}/report`}
+                  href={`${API_BASE}/api/cases/${caseDetails.id}/report`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5"
@@ -569,7 +571,7 @@ export default function App() {
                 </a>
 
                 <a
-                  href={`/api/cases/${caseDetails.id}/bundle`}
+                  href={`${API_BASE}/api/cases/${caseDetails.id}/bundle`}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 shadow-lg shadow-indigo-600/15"
                 >
                   <Download className="w-3.5 h-3.5" />
