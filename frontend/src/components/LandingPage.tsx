@@ -1,6 +1,3 @@
-import React, { Suspense } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { ParticleSystem, CyberTorus, BackgroundShader } from './Scene';
 import { ArrowRight, Fingerprint } from 'lucide-react';
 
 interface LandingPageProps {

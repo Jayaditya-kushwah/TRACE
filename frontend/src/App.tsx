@@ -4,7 +4,6 @@ import {
   FileText, 
   Upload, 
   CheckCircle, 
-  XCircle, 
   AlertTriangle, 
   CornerDownRight, 
   Download, 
@@ -22,7 +21,6 @@ import {
   Clock,
   User,
   X,
-  ArrowRight,
   Zap,
   Layers,
   Lock,
@@ -264,7 +262,7 @@ export default function App() {
   const [transferRecipient, setTransferRecipient] = useState<string>('');
   const [transferActor, setTransferActor] = useState<string>('');
   const [transferReason, setTransferReason] = useState<string>('');
-  const [uploadedBy, setUploadedBy] = useState<string>('Sarah Jenkins');
+  const [uploadedBy] = useState<string>('Sarah Jenkins');
 
   // AI & Tab states
   const [activeTab, setActiveTab] = useState<'timeline' | 'ai' | 'search'>('timeline');
@@ -327,7 +325,7 @@ export default function App() {
   // Demo generation
   const [demoLoading, setDemoLoading] = useState(false);
   const [showDemoPrompt, setShowDemoPrompt] = useState(false);
-  const [casesLoaded, setCasesLoaded] = useState(false);
+
 
   // Lights Out timing game
   const [gameMode, setGameMode] = useState<boolean>(false);
@@ -356,7 +354,6 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         setCases(data.data);
-        setCasesLoaded(true);
         // Show demo prompt if no cases exist
         if (data.data.length === 0) {
           setShowDemoPrompt(true);

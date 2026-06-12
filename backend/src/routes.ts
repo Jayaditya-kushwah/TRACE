@@ -903,7 +903,7 @@ router.get('/cases/:id/bundle', async (req: Request, res: Response) => {
     doc.end();
 
     // Wait for PDF writing to finish
-    await new Promise(resolve => pdfStream.on('finish', resolve));
+    await new Promise<void>(resolve => pdfStream.on('finish', () => resolve()));
 
     // Append report PDF
     archive.file(tempPdfPath, { name: `report-${cData.reference_id}.pdf` });

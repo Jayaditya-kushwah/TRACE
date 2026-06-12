@@ -44,7 +44,7 @@ async function callOllama(prompt: string, config: AiConfig, isJson = false) {
   });
   
   if (!res.ok) throw new Error(`Ollama Error: ${res.statusText}`);
-  const data = await res.json();
+  const data = (await res.json()) as any;
   return data.response;
 }
 
@@ -60,7 +60,7 @@ export async function getEmbedding(text: string, config?: AiConfig): Promise<num
         body: JSON.stringify({ model, prompt: text })
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as any;
         if (data.embedding && Array.isArray(data.embedding)) {
           let vec = data.embedding;
           // Force dimension to 1536 to match DB schema
@@ -81,8 +81,8 @@ export async function getEmbedding(text: string, config?: AiConfig): Promise<num
         model: 'text-embedding-004',
         contents: text,
       });
-      if (response.embedding && response.embedding.values) {
-        return response.embedding.values;
+      if (response.embeddings && response.embeddings[0] && response.embeddings[0].values) {
+        return response.embeddings[0].values;
       }
       throw new Error('No embedding values returned from Gemini');
     } catch (error) {
