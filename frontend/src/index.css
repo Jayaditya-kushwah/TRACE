@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Outfit", system-ui, -apple-system, sans-serif;
+  --font-sans: "Outfit", "Noto Sans Devanagari", "Noto Sans Telugu", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 }
 
