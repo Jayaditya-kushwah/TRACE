@@ -20,8 +20,13 @@ import {
   Sparkles,
   Lock,
   Search,
-  User
+  User,
+  Settings,
+  Globe,
+  X,
+  Languages
 } from "lucide-react";
+import { translations, formatBytes, formatDate } from "./i18n/translations";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || "";
 
@@ -46,6 +51,7 @@ interface Evidence {
   uploaded_at: string;
   status?: "VERIFIED" | "TAMPERED" | "MISSING";
   recalculated_hash?: string | null;
+  processing_status?: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
 }
 
 interface CustodyLog {
@@ -78,7 +84,27 @@ interface CaseVerificationResult {
   }>;
 }
 
+interface CaseAIInsights {
+  summary: { executive_summary: string; key_events: any[]; important_entities: any[] } | null;
+  entities: Array<{ id: string; entity_type: string; entity_value: string; evidence_id: string | null; original_filename: string | null }>;
+  timeline: Array<{ id: string; description: string; event_timestamp: string; confidence: string; supporting_evidence_ids: string[] }>;
+}
+
 export default function App() {
+  // Localization & Translations
+  const [lang, setLang] = useState<string>(() => localStorage.getItem("trace_lang") || "en");
+  
+  // AI Settings (BYOK & Local Ollama)
+  const [aiProvider, setAiProvider] = useState<string>(() => localStorage.getItem("trace_ai_provider") || "gemini");
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem("trace_gemini_key") || "");
+  const [ollamaHost, setOllamaHost] = useState<string>(() => localStorage.getItem("trace_ollama_host") || "http://localhost:11434");
+  const [ollamaModel, setOllamaModel] = useState<string>(() => localStorage.getItem("trace_ollama_model") || "llama3");
+  const [ollamaEmbedModel, setOllamaEmbedModel] = useState<string>(() => localStorage.getItem("trace_ollama_embed_model") || "nomic-embed-text");
+  
+  // UI Panels
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showSavedAlert, setShowSavedAlert] = useState(false);
+
   // Application State
   const [cases, setCases] = useState<Case[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
@@ -95,11 +121,7 @@ export default function App() {
   const [showSimulationPanel, setShowSimulationPanel] = useState(false);
 
   // AI Insights State
-  const [aiInsights, setAiInsights] = useState<{
-    summary: { executive_summary: string; key_events: any[]; important_entities: any[] } | null;
-    entities: Array<{ id: string; entity_type: string; entity_value: string; evidence_id: string | null; original_filename: string | null }>;
-    timeline: Array<{ id: string; description: string; event_timestamp: string; confidence: string; supporting_evidence_ids: string[] }>;
-  }>({ summary: null, entities: [], timeline: [] });
+  const [aiInsights, setAiInsights] = useState<CaseAIInsights>({ summary: null, entities: [], timeline: [] });
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [semanticQuery, setSemanticQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[] | null>(null);
@@ -129,6 +151,22 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Translation Helper
+  const t = (key: string) => {
+    return translations[lang]?.[key] || translations["en"]?.[key] || key;
+  };
+
+  // Generate headers representing current AI provider configuration
+  const getAIHeaders = () => {
+    return {
+      "x-ai-provider": aiProvider,
+      "x-ai-key": geminiApiKey,
+      "x-ai-endpoint": ollamaHost,
+      "x-ai-model": ollamaModel,
+      "x-ai-embed-model": ollamaEmbedModel
+    };
+  };
+
   // Fetch all cases on mount
   useEffect(() => {
     fetchCases();
@@ -150,6 +188,25 @@ export default function App() {
     }
   }, [selectedCaseId]);
 
+  const saveConfiguration = (e: React.FormEvent) => {
+    e.preventDefault();
+    localStorage.setItem("trace_lang", lang);
+    localStorage.setItem("trace_ai_provider", aiProvider);
+    localStorage.setItem("trace_gemini_key", geminiApiKey);
+    localStorage.setItem("trace_ollama_host", ollamaHost);
+    localStorage.setItem("trace_ollama_model", ollamaModel);
+    localStorage.setItem("trace_ollama_embed_model", ollamaEmbedModel);
+    
+    setShowSavedAlert(true);
+    setTimeout(() => setShowSavedAlert(false), 3000);
+    setIsSettingsOpen(false);
+    
+    // Refresh case insights if any case is selected
+    if (selectedCaseId) {
+      fetchAiInsights(selectedCaseId);
+    }
+  };
+
   const fetchAiInsights = async (caseId: string) => {
     setIsAiLoading(true);
     try {
@@ -169,14 +226,18 @@ export default function App() {
     if (!selectedCaseId) return;
     setIsAiLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-timeline`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-timeline`, {
+        method: "POST",
+        headers: getAIHeaders()
+      });
       const json = await res.json();
       if (json.success) {
         await fetchAiInsights(selectedCaseId);
-        alert("AI Forensic Timeline generated successfully!");
+        alert(lang === "hi" ? "समयरेखा सफलतापूर्वक तैयार की गई!" : lang === "te" ? "కాలక్రమం విజయవంతంగా నిర్మించబడింది!" : "AI Forensic Timeline generated successfully!");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("Error: " + err.message);
     } finally {
       setIsAiLoading(false);
     }
@@ -186,14 +247,18 @@ export default function App() {
     if (!selectedCaseId) return;
     setIsAiLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-summarize`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-summarize`, {
+        method: "POST",
+        headers: getAIHeaders()
+      });
       const json = await res.json();
       if (json.success) {
         await fetchAiInsights(selectedCaseId);
-        alert("AI Case Summary generated successfully!");
+        alert(lang === "hi" ? "मामला सारांश सफलतापूर्वक तैयार किया गया!" : lang === "te" ? "కేసు సారాంశం విజయవంతంగా నిర్మించబడింది!" : "AI Case Summary generated successfully!");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("Error: " + err.message);
     } finally {
       setIsAiLoading(false);
     }
@@ -204,13 +269,16 @@ export default function App() {
     if (!selectedCaseId || !semanticQuery.trim()) return;
     setIsSearching(true);
     try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-search?q=${encodeURIComponent(semanticQuery)}`);
+      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-search?q=${encodeURIComponent(semanticQuery)}`, {
+        headers: getAIHeaders()
+      });
       const json = await res.json();
       if (json.success) {
         setSearchResults(json.data);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("Search Error: " + err.message);
     } finally {
       setIsSearching(false);
     }
@@ -326,6 +394,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/evidence`, {
         method: "POST",
+        headers: getAIHeaders(),
         body: formData
       });
       const json = await res.json();
@@ -468,16 +537,6 @@ export default function App() {
     setTimeout(() => setCopiedHash(null), 2000);
   };
 
-  const formatBytes = (bytes: number | string) => {
-    const num = typeof bytes === "string" ? parseInt(bytes, 10) : bytes;
-    if (isNaN(num)) return "0 B";
-    if (num === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(num) / Math.log(k));
-    return parseFloat((num / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
-
   const getMimeIcon = (mime: string) => {
     if (mime.startsWith("image/")) return <ImageIcon className="w-8 h-8 text-indigo-400" />;
     if (mime.startsWith("video/")) return <Film className="w-8 h-8 text-amber-400" />;
@@ -492,31 +551,31 @@ export default function App() {
       case "CASE_CREATED":
         return {
           icon: <Plus className="w-4 h-4 text-sky-400" />,
-          bgColor: "bg-sky-500/10 border-sky-500/30",
+          bgColor: "bg-sky-500/10 border-sky-500/35",
           textColor: "text-sky-400"
         };
       case "EVIDENCE_UPLOADED":
         return {
           icon: <Upload className="w-4 h-4 text-emerald-400" />,
-          bgColor: "bg-emerald-500/10 border-emerald-500/30",
+          bgColor: "bg-emerald-500/10 border-emerald-500/35",
           textColor: "text-emerald-400"
         };
       case "CUSTODY_TRANSFERRED":
         return {
           icon: <ArrowRightLeft className="w-4 h-4 text-amber-400" />,
-          bgColor: "bg-amber-500/10 border-amber-500/30",
+          bgColor: "bg-amber-500/10 border-amber-500/35",
           textColor: "text-amber-400"
         };
       case "INTEGRITY_VERIFIED":
         return {
           icon: <ShieldCheck className="w-4 h-4 text-teal-400" />,
-          bgColor: "bg-teal-500/10 border-teal-500/30",
+          bgColor: "bg-teal-500/10 border-teal-500/35",
           textColor: "text-teal-400"
         };
       default:
         return {
           icon: <Clock className="w-4 h-4 text-slate-400" />,
-          bgColor: "bg-slate-500/10 border-slate-500/30",
+          bgColor: "bg-slate-500/10 border-slate-500/35",
           textColor: "text-slate-400"
         };
     }
@@ -537,271 +596,296 @@ export default function App() {
   }) || [];
 
   return (
-    <div className="flex h-screen bg-[#020617] text-slate-105 font-sans overflow-hidden">
+    <div className="flex h-screen bg-[#02050f] text-slate-100 font-sans overflow-hidden relative selection:bg-indigo-500/30 selection:text-indigo-200">
+      {/* yutaabe-inspired grid overlay background */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#0c1328_1px,transparent_1px),linear-gradient(to_bottom,#0c1328_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-30 pointer-events-none"></div>
+
       {/* 1. SIDEBAR */}
-      <aside className="w-80 border-r border-slate-800 bg-[#070d1e] flex flex-col">
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+      <aside className="w-80 border-r border-[#0d162f] bg-[#03081a]/90 backdrop-blur flex flex-col z-20 relative">
+        <div className="p-6 border-b border-[#0d162f] flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
-              <Shield className="w-6 h-6 text-emerald-400" />
+            <div className="bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/25 shadow-[0_0_10px_rgba(16,185,129,0.08)]">
+              <Shield className="w-6 h-6 text-emerald-450" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-wider text-emerald-400">T R A C E</h1>
-              <p className="text-[10px] text-slate-500 tracking-tight">Forensic Custody Engine</p>
+              <h1 className="text-lg font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-400">{t("app_title")}</h1>
+              <p className="text-[9px] text-slate-550 uppercase tracking-widest font-bold font-mono">{t("forensic_custody_engine")}</p>
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-4 border-b border-slate-800 bg-[#0b132b]/50">
-          <label className="text-[10px] uppercase tracking-wider text-slate-550 font-semibold block mb-1">
-            Current Investigator
+        <div className="px-6 py-4 border-b border-[#0d162f] bg-[#070e28]/40">
+          <label className="text-[9px] uppercase tracking-widest text-slate-500 font-bold block mb-1.5">
+            {t("current_investigator")}
           </label>
-          <div className="flex items-center space-x-2 bg-slate-900/80 px-3 py-2 rounded-lg border border-slate-800">
-            <User className="w-4 h-4 text-emerald-400" />
+          <div className="flex items-center space-x-2 bg-[#020512] px-3.5 py-2 rounded-xl border border-[#0c142c] focus-within:border-emerald-500/50 transition-all">
+            <User className="w-3.5 h-3.5 text-emerald-450" />
             <input
               type="text"
               value={investigatorName}
               onChange={(e) => setInvestigatorName(e.target.value)}
-              className="bg-transparent text-xs text-slate-300 focus:outline-none w-full font-medium"
+              className="bg-transparent text-xs text-slate-300 focus:outline-none w-full font-semibold"
             />
           </div>
         </div>
 
-        <div className="p-4 border-b border-slate-800">
+        <div className="p-4 border-b border-[#0d162f]">
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
             <input
               type="text"
-              placeholder="Search cases..."
+              placeholder={t("search_cases")}
               value={sidebarSearch}
               onChange={(e) => setSidebarSearch(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-300 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-[#020512] border border-[#0d162f] rounded-xl pl-9 pr-4 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500/70 placeholder:text-slate-650"
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        {/* Case List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {filteredCases.map((c) => (
             <button
               key={c.id}
               onClick={() => setSelectedCaseId(c.id)}
-              className={`w-full text-left p-4 rounded-xl border transition-all ${
+              className={`w-full text-left p-4 rounded-xl border transition-all relative group overflow-hidden ${
                 selectedCaseId === c.id
-                  ? "bg-slate-900 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.08)]"
-                  : "bg-transparent border-slate-800 hover:bg-[#0c142b]/40 hover:border-slate-800"
+                  ? "bg-[#0b132c]/75 border-indigo-500/40 shadow-[0_0_15px_rgba(99,102,241,0.06)]"
+                  : "bg-transparent border-[#0c142c] hover:bg-[#070e28]/40 hover:border-[#0e1735]"
               }`}
             >
-              <div className="flex justify-between items-start mb-1">
-                <span className="text-xs font-mono text-emerald-450 font-semibold bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
+              {selectedCaseId === c.id && (
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-indigo-500"></div>
+              )}
+              <div className="flex justify-between items-start mb-1.5">
+                <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-bold">
                   {c.reference_id}
                 </span>
-                <span className="text-[10px] text-slate-550">
-                  {new Date(c.created_at).toLocaleDateString()}
+                <span className="text-[9px] text-slate-500 font-bold font-mono">
+                  {formatDate(c.created_at, lang).split(",")[0]}
                 </span>
               </div>
-              <h3 className="text-sm font-semibold text-slate-200 line-clamp-1">{c.title}</h3>
-              <p className="text-xs text-slate-500 line-clamp-1 mt-1">{c.description || "No description"}</p>
+              <h3 className="text-xs font-bold text-slate-200 group-hover:text-white truncate">{c.title}</h3>
+              <p className="text-[10px] text-slate-500 truncate mt-1 leading-relaxed">{c.description || "No description"}</p>
             </button>
           ))}
           {filteredCases.length === 0 && (
-            <div className="text-center py-8">
-              <Folder className="w-8 h-8 text-slate-650 mx-auto mb-2" />
-              <p className="text-xs text-slate-500">No cases found</p>
+            <div className="text-center py-12">
+              <Folder className="w-8 h-8 text-slate-700 mx-auto mb-2 opacity-50" />
+              <p className="text-xs text-slate-500 font-semibold">{t("no_cases_found")}</p>
             </div>
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-800 space-y-2">
-          <button
-            onClick={handleSeedDemoCase}
-            className="w-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-emerald-400 font-semibold py-2 px-4 rounded-xl flex items-center justify-center space-x-2 text-xs transition-all cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Seed Demo Case</span>
-          </button>
+        {/* Settings and Actions */}
+        <div className="p-4 border-t border-[#0d162f] bg-[#020512]/60 space-y-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex-1 bg-[#060c20] hover:bg-[#0c132f] border border-[#0e1735] hover:border-slate-700 text-slate-300 font-semibold py-2 px-3 rounded-xl flex items-center justify-center space-x-1.5 text-[11px] cursor-pointer"
+              title="Configure Language and AI Providers"
+            >
+              <Settings className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{t("settings_title")}</span>
+            </button>
+            <button
+              onClick={handleSeedDemoCase}
+              className="bg-[#060c20] hover:bg-[#0c132f] border border-[#0e1735] hover:border-emerald-600/30 text-emerald-400 font-semibold p-2 rounded-xl flex items-center justify-center cursor-pointer"
+              title={t("seed_demo_case")}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center space-x-2 text-sm shadow-lg shadow-emerald-500/15 cursor-pointer"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center space-x-2 text-xs shadow-lg shadow-indigo-600/15 cursor-pointer border border-indigo-500/30"
           >
             <Plus className="w-4 h-4" />
-            <span>Create Case File</span>
+            <span>{t("create_case_file")}</span>
           </button>
         </div>
       </aside>
 
       {/* 2. MAIN WORKSPACE */}
-      <main className="flex-1 flex flex-col bg-[#040815] overflow-hidden">
+      <main className="flex-1 flex flex-col bg-[#02040b]/90 backdrop-blur z-10 overflow-hidden relative">
         {caseDetails ? (
           <>
-            <header className="p-6 border-b border-slate-800 bg-[#070d1e]/80 backdrop-blur flex items-center justify-between">
+            {/* Case Workspace Header */}
+            <header className="p-6 border-b border-[#0d162f] bg-[#03081a]/50 backdrop-blur flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <div className="flex items-center space-x-3 mb-1">
-                  <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                <div className="flex items-center space-x-3 mb-1.5">
+                  <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/25 font-bold tracking-wider">
                     {caseDetails.reference_id}
                   </span>
-                  <span className="text-xs text-slate-500 flex items-center">
-                    <Clock className="w-3.5 h-3.5 mr-1" />
-                    Opened {new Date(caseDetails.created_at).toUTCString()}
+                  <span className="text-[10px] text-slate-500 flex items-center font-semibold">
+                    <Clock className="w-3 h-3 mr-1.5 text-slate-500" />
+                    {t("opened_at")} {formatDate(caseDetails.created_at, lang)}
                   </span>
                 </div>
-                <h2 className="text-2xl font-bold text-slate-200">{caseDetails.title}</h2>
+                <h2 className="text-xl font-black text-slate-100 tracking-tight">{caseDetails.title}</h2>
               </div>
 
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setShowSimulationPanel(!showSimulationPanel)}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 border transition-all ${
+                  className={`px-3.5 py-2 rounded-xl text-[10px] font-bold flex items-center space-x-1.5 border transition-all ${
                     showSimulationPanel
-                      ? "bg-rose-500/10 border-rose-500/40 text-rose-400"
-                      : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-250 hover:bg-slate-800"
+                      ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                      : "bg-[#060c20] border-[#0e1735] text-slate-400 hover:text-slate-200 hover:bg-[#0c132f]"
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Tamper Simulation</span>
+                  <Sparkles className="w-3 h-3" />
+                  <span>{t("tamper_simulation")}</span>
                 </button>
 
                 <button
                   onClick={handleAuditCase}
                   disabled={isAuditLoading}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-emerald-500/10"
+                  className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-[#02050f] px-3.5 py-2 rounded-xl text-[10px] font-black flex items-center space-x-1.5 shadow-md shadow-emerald-500/10 cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isAuditLoading ? "animate-spin" : ""}`} />
-                  <span>{isAuditLoading ? "Verifying..." : "Audit Case Integrity"}</span>
+                  <span>{isAuditLoading ? t("verifying") : t("audit_case_integrity")}</span>
                 </button>
 
                 <a
                   href={`${API_BASE}/api/cases/${caseDetails.id}/report`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5"
+                  className="bg-[#060c20] border border-[#0e1735] hover:bg-[#0c132f] text-slate-300 px-3.5 py-2 rounded-xl text-[10px] font-bold flex items-center space-x-1.5"
                 >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Export Report</span>
+                  <FileText className="w-3 h-3 text-indigo-400" />
+                  <span>{t("export_report")}</span>
                 </a>
 
                 <a
                   href={`${API_BASE}/api/cases/${caseDetails.id}/bundle`}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 shadow-lg shadow-indigo-600/15"
+                  className="bg-indigo-600 hover:bg-indigo-750 border border-indigo-500/35 text-white px-3.5 py-2 rounded-xl text-[10px] font-bold flex items-center space-x-1.5 shadow-lg shadow-indigo-600/10"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download Archive</span>
+                  <Download className="w-3 h-3" />
+                  <span>{t("download_archive")}</span>
                 </a>
               </div>
             </header>
 
+            {/* Verification Result Banner */}
             {hasAudited && auditResult && (
               <div
                 className={`px-6 py-4 flex items-center justify-between border-b transition-all ${
                   auditResult.chain_integrity && auditResult.evidence_status.every((e) => e.status === "VERIFIED")
-                    ? "bg-emerald-950/20 border-emerald-900/35 text-emerald-400"
-                    : "bg-rose-950/20 border-rose-900/35 text-rose-450"
+                    ? "bg-emerald-950/20 border-emerald-900/30 text-emerald-450 glow-emerald"
+                    : "bg-rose-950/20 border-rose-900/35 text-rose-400 glow-rose"
                 }`}
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-3.5">
                   {auditResult.chain_integrity && auditResult.evidence_status.every((e) => e.status === "VERIFIED") ? (
                     <>
-                      <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                      <ShieldCheck className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                       <div>
-                        <h4 className="text-sm font-semibold">Verification Audit Passed</h4>
-                        <p className="text-xs text-emerald-500/85">
-                          The cryptographic hash-chain matches database records and all files on disk are fully intact and unaltered.
+                        <h4 className="text-xs font-bold uppercase tracking-wider">{t("verification_passed_title")}</h4>
+                        <p className="text-[11px] text-emerald-500/90 mt-0.5 font-medium leading-relaxed">
+                          {t("verification_passed_desc")}
                         </p>
                       </div>
                     </>
                   ) : (
                     <>
-                      <AlertTriangle className="w-5 h-5 text-rose-450 animate-pulse" />
+                      <AlertTriangle className="w-5 h-5 text-rose-455 animate-pulse flex-shrink-0" />
                       <div>
-                        <h4 className="text-sm font-bold">CRITICAL WARNING: Integrity Compromised</h4>
-                        <p className="text-xs text-rose-500/85">
-                          {!auditResult.chain_integrity
-                            ? "Hash Chain Linkage Broken: Historical entries in the database custody log have been altered."
-                            : "Forensic Evidence Modified: Disk file hashes do not match database verification snapshots."}
+                        <h4 className="text-xs font-bold uppercase tracking-wider">{t("verification_failed_title")}</h4>
+                        <p className="text-[11px] text-rose-500/90 mt-0.5 font-medium leading-relaxed">
+                          {t("verification_failed_desc")}
                         </p>
                       </div>
                     </>
                   )}
                 </div>
-                <div className="text-xs font-semibold uppercase tracking-wider bg-slate-905/50 border px-3 py-1 rounded-lg">
+                <div className="text-[9px] font-black uppercase tracking-widest bg-[#02050f]/80 border border-slate-800/80 px-3 py-1.5 rounded-lg">
                   {auditResult.chain_integrity && auditResult.evidence_status.every((e) => e.status === "VERIFIED")
-                    ? "Verified Secure"
-                    : "TAMPER DETECTED"}
+                    ? t("verified_secure")
+                    : t("tamper_detected")}
                 </div>
               </div>
             )}
 
-            <div className="px-6 border-b border-slate-800 bg-[#070d1e]/20 flex justify-between items-center">
+            {/* Tab Navigation */}
+            <div className="px-6 border-b border-[#0d162f] bg-[#03081a]/20 flex justify-between items-center z-10">
               <div className="flex space-x-6">
                 <button
                   onClick={() => setActiveTab("catalog")}
-                  className={`py-3 text-sm font-semibold border-b-2 transition-all ${
+                  className={`py-3 text-xs font-bold border-b-2 tracking-wider uppercase transition-all ${
                     activeTab === "catalog"
-                      ? "border-emerald-500 text-emerald-400"
+                      ? "border-indigo-500 text-indigo-400"
                       : "border-transparent text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  Evidence Catalog ({decoratedEvidence.length})
+                  {t("evidence_catalog")} ({decoratedEvidence.length})
                 </button>
                 <button
                   onClick={() => setActiveTab("timeline")}
-                  className={`py-3 text-sm font-semibold border-b-2 transition-all ${
+                  className={`py-3 text-xs font-bold border-b-2 tracking-wider uppercase transition-all ${
                     activeTab === "timeline"
-                      ? "border-emerald-500 text-emerald-400"
+                      ? "border-indigo-500 text-indigo-400"
                       : "border-transparent text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  Audit Timeline ({caseDetails.logs.length})
+                  {t("audit_timeline")} ({caseDetails.logs.length})
                 </button>
                 <button
                   onClick={() => setActiveTab("ai_hub")}
-                  className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center space-x-1.5 ${
+                  className={`py-3 text-xs font-bold border-b-2 tracking-wider uppercase transition-all flex items-center space-x-1.5 ${
                     activeTab === "ai_hub"
-                      ? "border-emerald-500 text-emerald-400"
+                      ? "border-indigo-500 text-indigo-400"
                       : "border-transparent text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-450" />
-                  <span>AI Evidence Intelligence</span>
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                  <span>{t("ai_insights_tab")}</span>
                 </button>
               </div>
 
               {showSimulationPanel && (
                 <div className="flex items-center space-x-2 py-2">
-                  <span className="text-xs font-medium text-rose-400">Simulation Enabled</span>
+                  <span className="text-[9px] uppercase tracking-widest font-black text-rose-455">{t("simulation_enabled")}</span>
                   <button
                     onClick={restoreCaseIntegrity}
-                    className="text-xs bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-200 px-3 py-1 rounded-lg flex items-center space-x-1"
+                    className="text-[10px] bg-[#060c20] border border-[#0d162f] hover:border-emerald-500/30 hover:bg-[#0c132f] text-slate-200 px-3 py-1 rounded-lg flex items-center space-x-1 font-bold transition-all cursor-pointer"
                   >
                     <RefreshCw className="w-3 h-3 text-emerald-450" />
-                    <span>Restore Originals</span>
+                    <span>{t("restore_originals")}</span>
                   </button>
                 </div>
               )}
             </div>
 
+            {/* TAB CONTENTS */}
             <div className="flex-1 flex overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                
+                {/* 1. EVIDENCE CATALOG TAB */}
                 {activeTab === "catalog" ? (
                   <div className="space-y-6">
-                    <div className="bg-[#0b132b]/20 p-5 rounded-2xl border border-slate-800">
-                      <h3 className="text-xs font-semibold text-slate-450 uppercase tracking-wider mb-2">
-                        Investigative Abstract
+                    {/* Abstract Card */}
+                    <div className="bg-[#04091e]/50 p-5 rounded-2xl border border-[#0d162f] relative overflow-hidden glass">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl pointer-events-none"></div>
+                      <h3 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2.5">
+                        {t("investigative_abstract")}
                       </h3>
-                      <p className="text-sm text-slate-300 leading-relaxed font-medium">
+                      <p className="text-xs text-slate-350 leading-relaxed font-semibold">
                         {caseDetails.description || "No summary provided for this investigation case file."}
                       </p>
-                      <div className="grid grid-cols-2 gap-4 mt-4 text-xs text-slate-500 border-t border-slate-800 pt-4 font-medium">
+                      <div className="grid grid-cols-2 gap-4 mt-4 border-t border-[#0c142c] pt-4 font-mono text-[10px] text-slate-500">
                         <div>
-                          <span className="block font-semibold">Created By:</span>
-                          <span className="text-slate-400">{caseDetails.created_by}</span>
+                          <span className="block text-slate-600 font-bold">{t("created_by")}</span>
+                          <span className="text-slate-400 font-bold">{caseDetails.created_by}</span>
                         </div>
                         <div>
-                          <span className="block font-semibold">Case Reference Code:</span>
-                          <span className="font-mono text-emerald-400">{caseDetails.reference_id}</span>
+                          <span className="block text-slate-600 font-bold">{t("case_ref_code")}</span>
+                          <span className="text-emerald-400 font-bold">{caseDetails.reference_id}</span>
                         </div>
                       </div>
                     </div>
 
+                    {/* Drag and Drop Zone */}
                     <div
                       onDragEnter={handleDrag}
                       onDragLeave={handleDrag}
@@ -809,8 +893,8 @@ export default function App() {
                       onDrop={handleDrop}
                       className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
                         dragActive
-                          ? "border-emerald-500 bg-emerald-500/5 scale-[0.99]"
-                          : "border-slate-800 hover:border-slate-700 bg-[#070d1e]/10"
+                          ? "border-indigo-500 bg-indigo-500/5 scale-[0.99]"
+                          : "border-[#0d162f] hover:border-slate-800 bg-[#030717]/30"
                       }`}
                     >
                       <input
@@ -819,63 +903,81 @@ export default function App() {
                         onChange={handleFileChange}
                         className="hidden"
                       />
-                      <Upload className="w-10 h-10 text-emerald-450 mx-auto mb-3 animate-bounce" />
-                      <h4 className="text-sm font-semibold text-slate-200">
-                        Drag and drop digital evidence file here
+                      <Upload className="w-8 h-8 text-indigo-400 mx-auto mb-3 animate-bounce" />
+                      <h4 className="text-xs font-bold text-slate-200">
+                        {t("drag_drop_zone")}
                       </h4>
-                      <p className="text-xs text-slate-500 mt-1 mb-4 font-medium">
-                        Files will be cryptographically hashed and appended to immutable custody database records.
+                      <p className="text-[10px] text-slate-500 mt-1 mb-4 font-semibold leading-relaxed max-w-md mx-auto">
+                        {t("drag_drop_sub")}
                       </p>
                       <button
                         onClick={() => fileInputRef.current?.click()}
                         disabled={isUploading}
-                        className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-350 px-4 py-2 rounded-xl text-xs font-bold"
+                        className="bg-[#060c20] border border-[#0d162f] hover:bg-[#0c132f] text-slate-300 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
                       >
-                        {isUploading ? "Uploading..." : "Select File"}
+                        {isUploading ? t("uploading") : t("select_file")}
                       </button>
                     </div>
 
+                    {/* Evidence List */}
                     <div>
-                      <h3 className="text-xs font-semibold text-slate-450 uppercase tracking-wider mb-4">
-                        Secure Evidence Records ({decoratedEvidence.length})
+                      <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">
+                        {t("secure_evidence_records")} ({decoratedEvidence.length})
                       </h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {decoratedEvidence.map((ev) => (
                           <div
                             key={ev.id}
-                            className={`p-5 rounded-2xl border bg-slate-900/40 relative overflow-hidden transition-all ${
+                            className={`p-5 rounded-2xl border bg-[#03081a]/40 relative overflow-hidden transition-all hover:-translate-y-0.5 ${
                               ev.status === "VERIFIED"
                                 ? "border-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.04)] glow-emerald"
                                 : ev.status === "TAMPERED"
                                 ? "border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.04)] glow-rose"
                                 : ev.status === "MISSING"
                                 ? "border-amber-500/25"
-                                : "border-slate-800"
+                                : "border-[#0c142c]"
                             }`}
                           >
                             <div className="flex items-start space-x-4">
-                              <div className="p-3 bg-[#0a1228] rounded-xl border border-slate-800">
+                              <div className="p-3 bg-[#020512] rounded-xl border border-[#0d162f]">
                                 {getMimeIcon(ev.mime_type)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <h4 className="text-sm font-semibold text-slate-200 truncate" title={ev.original_filename}>
+                                <h4 className="text-xs font-bold text-slate-200 truncate pr-16" title={ev.original_filename}>
                                   {ev.original_filename}
                                 </h4>
-                                <div className="flex items-center space-x-3 text-xs text-slate-500 mt-1 font-medium">
-                                  <span>{formatBytes(ev.file_size_bytes)}</span>
+                                <div className="flex items-center space-x-3 text-[10px] text-slate-500 mt-1 font-semibold">
+                                  <span>{formatBytes(ev.file_size_bytes, lang)}</span>
                                   <span>•</span>
-                                  <span>{ev.mime_type}</span>
+                                  <span className="uppercase">{ev.mime_type.split("/")[1] || ev.mime_type}</span>
                                 </div>
+                                
+                                {/* Background Processing Status */}
+                                {ev.processing_status && ev.processing_status !== "COMPLETED" && (
+                                  <div className="mt-2 flex items-center space-x-1.5 text-[9px] font-bold uppercase tracking-widest font-mono">
+                                    <span className="relative flex h-2 w-2">
+                                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                                        ev.processing_status === "PROCESSING" ? "bg-indigo-400" : ev.processing_status === "FAILED" ? "bg-rose-400" : "bg-slate-400"
+                                      }`}></span>
+                                      <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                                        ev.processing_status === "PROCESSING" ? "bg-indigo-500" : ev.processing_status === "FAILED" ? "bg-rose-500" : "bg-slate-500"
+                                      }`}></span>
+                                    </span>
+                                    <span className={ev.processing_status === "PROCESSING" ? "text-indigo-400" : ev.processing_status === "FAILED" ? "text-rose-455" : "text-slate-550"}>
+                                      {t("running_status")}: {ev.processing_status}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
 
                               {ev.status && (
                                 <div className="absolute top-4 right-4">
                                   <span
-                                    className={`text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full border ${
+                                    className={`text-[8px] uppercase tracking-widest font-black px-2 py-0.5 rounded-full border ${
                                       ev.status === "VERIFIED"
                                         ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                                         : ev.status === "TAMPERED"
-                                        ? "bg-rose-500/10 border-rose-500/25 text-rose-450"
+                                        ? "bg-rose-500/10 border-rose-500/25 text-rose-400"
                                         : "bg-amber-500/10 border-amber-500/20 text-amber-450"
                                     }`}
                                   >
@@ -885,22 +987,22 @@ export default function App() {
                               )}
                             </div>
 
-                            <div className="mt-4 p-2 bg-slate-950/70 border border-slate-900 rounded-lg flex items-center justify-between">
+                            <div className="mt-4 p-2 bg-[#020512]/90 border border-[#0d162f] rounded-xl flex items-center justify-between">
                               <div className="min-w-0">
-                                <span className="text-[9px] font-semibold text-slate-550 uppercase block tracking-wider">
-                                  SHA-256 HASH
+                                <span className="text-[8px] font-bold text-slate-550 uppercase block tracking-wider font-mono">
+                                  {t("sha256_hash")}
                                 </span>
-                                <span className="font-mono text-[10px] text-slate-400 truncate block">
+                                <span className="font-mono text-[9px] text-slate-400 truncate block">
                                   {ev.sha256_hash}
                                 </span>
                               </div>
                               <button
                                 onClick={() => copyToClipboard(ev.sha256_hash)}
-                                className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-900 ml-2 flex-shrink-0"
+                                className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-[#070d22] ml-2 flex-shrink-0 transition-all cursor-pointer"
                                 title="Copy full SHA-256 hash"
                               >
                                 {copiedHash === ev.sha256_hash ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <Check className="w-3.5 h-3.5 text-emerald-450" />
                                 ) : (
                                   <Copy className="w-3.5 h-3.5" />
                                 )}
@@ -908,47 +1010,47 @@ export default function App() {
                             </div>
 
                             {ev.status === "TAMPERED" && ev.recalculated_hash && (
-                              <div className="mt-2 p-2 bg-rose-950/10 border border-rose-950/30 rounded-lg">
-                                <span className="text-[9px] font-bold text-rose-455 uppercase block tracking-wider">
-                                  Recalculated Hash on server:
+                              <div className="mt-2.5 p-2 bg-rose-950/10 border border-rose-950/20 rounded-xl">
+                                <span className="text-[8px] font-black text-rose-455 uppercase block tracking-wider font-mono">
+                                  {t("recalculated_hash")}
                                 </span>
-                                <span className="font-mono text-[10px] text-rose-500 truncate block">
+                                <span className="font-mono text-[9px] text-rose-500 truncate block">
                                   {ev.recalculated_hash}
                                 </span>
                               </div>
                             )}
 
-                            <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3 font-medium">
-                              <span className="text-[10px] text-slate-500">
-                                Uploaded by: <span className="text-slate-400">{ev.uploaded_by}</span>
+                            <div className="mt-4 flex items-center justify-between border-t border-[#0c142c] pt-3 text-[10px] font-semibold text-slate-500">
+                              <span>
+                                {t("uploaded_by")}: <span className="text-slate-450">{ev.uploaded_by}</span>
                               </span>
                               <button
                                 onClick={() => {
                                   setTransferTargetEvidence(ev);
                                   setIsTransferModalOpen(true);
                                 }}
-                                className="text-[11px] font-bold text-emerald-400 hover:text-emerald-500 flex items-center space-x-1"
+                                className="text-[10px] font-bold text-indigo-400 hover:text-indigo-350 flex items-center space-x-1.5 transition-all cursor-pointer"
                               >
                                 <ArrowRightLeft className="w-3 h-3" />
-                                <span>Transfer Custody</span>
+                                <span>{t("transfer_custody")}</span>
                               </button>
                             </div>
 
                             {showSimulationPanel && (
-                              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-dashed border-rose-950/30 pt-3">
+                              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-dashed border-rose-950/20 pt-3">
                                 <button
                                   onClick={() => simulateFileTampering(ev.id)}
-                                  className="bg-rose-950/30 border border-rose-900/40 hover:bg-rose-950/50 text-rose-400 text-[10px] font-semibold py-1 px-2 rounded-lg flex items-center justify-center space-x-1"
+                                  className="bg-rose-950/20 border border-rose-900/30 hover:bg-rose-950/40 text-rose-400 text-[9px] font-bold py-1.5 px-2 rounded-xl flex items-center justify-center space-x-1 cursor-pointer transition-all"
                                 >
                                   <AlertTriangle className="w-3 h-3" />
-                                  <span>Tamper Disk File</span>
+                                  <span>{t("tamper_disk_file")}</span>
                                 </button>
                                 <button
                                   onClick={() => simulateDbHashTampering(ev.id)}
-                                  className="bg-rose-950/30 border border-rose-900/40 hover:bg-rose-950/50 text-rose-400 text-[10px] font-semibold py-1 px-2 rounded-lg flex items-center justify-center space-x-1"
+                                  className="bg-rose-950/20 border border-rose-900/30 hover:bg-rose-950/40 text-rose-400 text-[9px] font-bold py-1.5 px-2 rounded-xl flex items-center justify-center space-x-1 cursor-pointer transition-all"
                                 >
                                   <Lock className="w-3 h-3" />
-                                  <span>Tamper DB Hash</span>
+                                  <span>{t("tamper_db_hash")}</span>
                                 </button>
                               </div>
                             )}
@@ -957,29 +1059,31 @@ export default function App() {
                       </div>
 
                       {decoratedEvidence.length === 0 && (
-                        <div className="text-center py-12 border border-slate-800 rounded-2xl bg-slate-900/10">
-                          <Folder className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-                          <h4 className="text-sm font-semibold text-slate-400">Empty Evidence Room</h4>
-                          <p className="text-xs text-slate-500 mt-1">
-                            Drag and drop forensic digital files to begin securing evidence hashes.
+                        <div className="text-center py-12 border border-[#0d162f] rounded-2xl bg-[#030717]/10 glass">
+                          <Folder className="w-10 h-10 text-slate-700 mx-auto mb-3 opacity-40" />
+                          <h4 className="text-xs font-bold text-slate-400">{t("empty_evidence_room")}</h4>
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            {t("empty_evidence_desc")}
                           </p>
                         </div>
                       )}
                     </div>
                   </div>
                 ) : activeTab === "timeline" ? (
+                  
+                  /* 2. AUDIT TIMELINE TAB */
                   <div className="space-y-6 max-w-3xl mx-auto">
-                    <div className="bg-[#0b132b]/20 p-5 rounded-2xl border border-slate-800 flex items-center space-x-4">
+                    <div className="bg-[#050b1e]/50 p-5 rounded-2xl border border-[#0d162f] flex items-center space-x-4 glass">
                       <ShieldCheck className="w-8 h-8 text-emerald-450 flex-shrink-0" />
                       <div>
-                        <h3 className="text-sm font-bold text-slate-200">Linked Chain-of-Custody Verification</h3>
-                        <p className="text-xs text-slate-400 mt-0.5 font-medium leading-relaxed">
-                          Each event log calculates a SHA-256 block hash incorporating the content details, actor identity, and the cryptographic hash of the previous log record.
+                        <h3 className="text-xs font-bold text-slate-200">Linked Chain-of-Custody Verification</h3>
+                        <p className="text-[10px] text-slate-450 mt-1 font-semibold leading-relaxed">
+                          {t("linked_chain_desc")}
                         </p>
                       </div>
                     </div>
 
-                    <div className="relative border-l border-slate-800 ml-4 pl-8 space-y-8 py-2">
+                    <div className="relative border-l border-[#0d162f] ml-4 pl-8 space-y-8 py-2">
                       {caseDetails.logs.map((log) => {
                         const style = getActionStyles(log.action_type);
                         const isTampered =
@@ -988,58 +1092,58 @@ export default function App() {
                         return (
                           <div key={log.id} className="relative">
                             <div
-                              className={`absolute -left-[41px] top-1 p-2 rounded-full border bg-slate-950 flex items-center justify-center shadow-lg transition-all ${
+                              className={`absolute -left-[41px] top-1 p-2 rounded-full border bg-[#02050f] flex items-center justify-center shadow-lg transition-all ${
                                 isTampered ? "border-rose-500 bg-rose-950/20" : style.bgColor
                               }`}
                             >
-                              {isTampered ? <AlertTriangle className="w-4 h-4 text-rose-500" /> : style.icon}
+                              {isTampered ? <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" /> : style.icon}
                             </div>
 
                             <div
-                              className={`p-5 rounded-2xl border bg-[#050b18]/60 transition-all ${
+                              className={`p-5 rounded-2xl border bg-[#03081a]/40 transition-all ${
                                 isTampered
-                                  ? "border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.06)]"
-                                  : "border-slate-800 hover:border-slate-700"
+                                  ? "border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.06)] bg-rose-950/5"
+                                  : "border-[#0c142c] hover:border-[#0f1b3e]"
                               }`}
                             >
-                              <div className="flex justify-between items-start mb-2">
+                              <div className="flex justify-between items-start mb-2.5">
                                 <div>
                                   <span
-                                    className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                                      isTampered ? "bg-rose-500/15 border-rose-500/30 text-rose-455" : style.bgColor
+                                    className={`text-[9px] font-mono font-black uppercase tracking-widest px-2 py-0.5 rounded border ${
+                                      isTampered ? "bg-rose-500/10 border-rose-500/25 text-rose-455" : style.bgColor
                                     }`}
                                   >
                                     {log.action_type}
                                   </span>
-                                  <h4 className="text-xs text-slate-450 mt-2 font-semibold">
-                                    Actor: <span className="font-bold text-slate-250">{log.actor}</span>
+                                  <h4 className="text-[10px] text-slate-500 mt-2 font-semibold">
+                                    {t("actor")}: <span className="font-bold text-slate-300 font-mono">{log.actor}</span>
                                   </h4>
                                 </div>
-                                <span className="text-[10px] text-slate-550 font-bold">
-                                  {new Date(log.created_at).toUTCString()}
+                                <span className="text-[9px] text-slate-500 font-bold font-mono">
+                                  {formatDate(log.created_at, lang)}
                                 </span>
                               </div>
 
-                              <p className="text-sm text-slate-350 leading-relaxed font-semibold mb-4">
-                                {log.details || "No transaction remarks."}
+                              <p className="text-xs text-slate-300 leading-relaxed font-semibold mb-4">
+                                {log.details || t("no_remarks")}
                               </p>
 
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-805 text-[10px] font-semibold">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-[#0c142c] font-mono text-[9px] text-slate-500">
                                 <div>
-                                  <span className="block font-semibold text-slate-550 uppercase tracking-wider">
-                                    Previous Log Block Hash
+                                  <span className="block text-slate-650 font-bold uppercase tracking-wider">
+                                    {t("prev_block_hash")}
                                   </span>
-                                  <span className="font-mono text-slate-455 block truncate" title={log.prev_log_hash}>
+                                  <span className="text-slate-500 block truncate font-bold" title={log.prev_log_hash}>
                                     {log.prev_log_hash}
                                   </span>
                                 </div>
                                 <div>
-                                  <span className="block font-semibold text-slate-550 uppercase tracking-wider">
-                                    Current Log Block Hash (Hn)
+                                  <span className="block text-slate-650 font-bold uppercase tracking-wider">
+                                    {t("current_block_hash")}
                                   </span>
                                   <span
-                                    className={`font-mono block truncate ${
-                                      isTampered ? "text-rose-450 font-bold" : "text-emerald-400"
+                                    className={`block truncate font-bold ${
+                                      isTampered ? "text-rose-455 font-bold" : "text-emerald-450"
                                     }`}
                                     title={log.log_hash}
                                   >
@@ -1052,10 +1156,10 @@ export default function App() {
                                 <div className="mt-3 flex justify-end border-t border-dashed border-rose-950/20 pt-3">
                                   <button
                                     onClick={() => simulateLogChainTampering(log.id)}
-                                    className="bg-rose-950/20 border border-rose-900/40 hover:bg-rose-950/40 text-rose-400 text-[10px] font-semibold py-1 px-2.5 rounded-lg flex items-center space-x-1"
+                                    className="bg-rose-950/20 border border-rose-900/30 hover:bg-rose-950/40 text-rose-400 text-[9px] font-bold py-1.5 px-3 rounded-lg flex items-center space-x-1 cursor-pointer transition-all"
                                   >
                                     <AlertTriangle className="w-3 h-3" />
-                                    <span>Alter Log Details</span>
+                                    <span>{t("alter_log_details")}</span>
                                   </button>
                                 </div>
                               )}
@@ -1066,52 +1170,55 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
+                  
+                  /* 3. AI EVIDENCE INTELLIGENCE TAB */
                   <div className="space-y-6 max-w-7xl mx-auto">
-                    {/* 1. SEMANTIC SEARCH SECTION */}
-                    <div className="bg-[#0b132b]/30 p-6 rounded-2xl border border-slate-800">
-                      <h3 className="text-sm font-bold text-slate-200 flex items-center space-x-2 mb-3">
-                        <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
-                        <span>Semantic & Natural Language Query</span>
+                    {/* Semantic search box */}
+                    <div className="bg-[#040920]/40 p-6 rounded-2xl border border-[#0d162f] relative overflow-hidden glass">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 blur-3xl pointer-events-none"></div>
+                      <h3 className="text-xs font-bold text-slate-200 flex items-center space-x-2 mb-3">
+                        <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                        <span>{t("semantic_query_title")}</span>
                       </h3>
-                      <p className="text-xs text-slate-400 mb-4 font-medium leading-relaxed">
-                        Query case data using everyday language (e.g. <i>"Find payment references to Jessy"</i> or <i>"Show transaction records mentioning 5000 rupees"</i>). Powered by Gemini vector embeddings and pgvector cosine search.
+                      <p className="text-[10px] text-slate-450 mb-4 font-semibold leading-relaxed">
+                        {t("semantic_query_desc")}
                       </p>
                       <form onSubmit={handleSemanticSearch} className="flex space-x-3">
                         <div className="relative flex-1">
                           <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
                           <input
                             type="text"
-                            placeholder="Ask natural language questions..."
+                            placeholder={t("ask_questions_placeholder")}
                             value={semanticQuery}
                             onChange={(e) => setSemanticQuery(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 font-medium"
+                            className="w-full bg-[#020512] border border-[#0d162f] rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/70 font-semibold"
                           />
                         </div>
                         <button
                           type="submit"
                           disabled={isSearching}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-indigo-600/15 cursor-pointer disabled:opacity-50"
+                          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-indigo-600/10 cursor-pointer transition-all border border-indigo-500/30"
                         >
                           <Sparkles className="w-3.5 h-3.5" />
-                          <span>{isSearching ? "Analyzing..." : "Query Case"}</span>
+                          <span>{isSearching ? t("analyzing") : t("query_case")}</span>
                         </button>
                       </form>
 
-                      {/* Search Results */}
+                      {/* Semantic search results */}
                       {searchResults !== null && (
-                        <div className="mt-6 border-t border-slate-800/60 pt-4 space-y-4">
+                        <div className="mt-6 border-t border-[#0d162f]/60 pt-4 space-y-4">
                           <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                              Semantic Matches ({searchResults.length})
+                            <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                              {t("semantic_matches")} ({searchResults.length})
                             </h4>
                             <button
                               onClick={() => {
                                 setSearchResults(null);
                                 setSemanticQuery("");
                               }}
-                              className="text-xs font-bold text-rose-455 hover:text-rose-500"
+                              className="text-[10px] font-black text-rose-455 hover:text-rose-500 cursor-pointer transition-all"
                             >
-                              Clear Results
+                              {t("clear_results")}
                             </button>
                           </div>
                           
@@ -1119,27 +1226,27 @@ export default function App() {
                             {searchResults.map((res, idx) => (
                               <div
                                 key={idx}
-                                className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/45 space-y-2 hover:border-slate-700/85 transition-all"
+                                className="p-4 rounded-xl border border-[#0d162f] bg-[#020512]/60 hover:border-slate-800/80 transition-all space-y-2.5"
                               >
                                 <div className="flex justify-between items-start">
-                                  <span className="text-[10px] font-mono text-emerald-450 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 font-bold truncate max-w-[200px]">
+                                  <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 font-bold truncate max-w-[200px]">
                                     {res.filename}
                                   </span>
-                                  <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
-                                    {(res.similarity * 100).toFixed(1)}% Match
+                                  <span className="text-[9px] font-black text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
+                                    {(res.similarity * 100).toFixed(1)}% {t("match")}
                                   </span>
                                 </div>
                                 <p className="text-xs text-slate-350 leading-relaxed font-semibold italic">
                                   "{res.snippet}"
                                 </p>
-                                <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
-                                  Source type: {res.content_type}
+                                <div className="text-[8px] text-slate-550 font-bold uppercase tracking-wider font-mono">
+                                  {t("source_type")}: {res.content_type}
                                 </div>
                               </div>
                             ))}
                             {searchResults.length === 0 && (
-                              <div className="text-center py-6 text-xs text-slate-500 col-span-2">
-                                No semantic matches found for your query. Try different terms.
+                              <div className="text-center py-6 text-xs text-slate-500 font-semibold col-span-2">
+                                {t("no_semantic_matches")}
                               </div>
                             )}
                           </div>
@@ -1147,45 +1254,45 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* 2. SPLIT LAYOUT: SUMMARY & ENTITIES VS TIMELINE */}
+                    {/* Summary, Entities & Timeline split */}
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                       
-                      {/* Left side: Case summary & Entities (Col span 5) */}
+                      {/* Left: Summary & Entities (Col span 5) */}
                       <div className="lg:col-span-5 space-y-6">
                         
-                        {/* Executive Summary */}
-                        <div className="bg-[#070d1e]/85 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                        {/* Executive Summary Card */}
+                        <div className="bg-[#03081a]/40 p-5 rounded-2xl border border-[#0d162f] flex flex-col justify-between relative glass">
                           <div>
                             <div className="flex justify-between items-center mb-3">
-                              <h3 className="text-xs font-semibold text-slate-450 uppercase tracking-wider">
-                                Executive Summary
+                              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                {t("executive_summary")}
                               </h3>
                               <button
                                 onClick={handleGenerateSummary}
                                 disabled={isAiLoading}
-                                className="text-[10px] font-bold text-emerald-400 hover:text-emerald-500 flex items-center space-x-1"
+                                className="text-[10px] font-black text-indigo-400 hover:text-indigo-350 flex items-center space-x-1 cursor-pointer transition-all"
                               >
                                 <RefreshCw className={`w-3 h-3 ${isAiLoading ? "animate-spin" : ""}`} />
-                                <span>Recompile</span>
+                                <span>{t("recompile")}</span>
                               </button>
                             </div>
 
                             {aiInsights.summary ? (
                               <div className="space-y-4">
-                                <p className="text-xs text-slate-350 leading-relaxed font-semibold whitespace-pre-wrap">
+                                <p className="text-[11px] text-slate-350 leading-relaxed font-semibold whitespace-pre-wrap">
                                   {aiInsights.summary.executive_summary}
                                 </p>
                                 
                                 {aiInsights.summary.important_entities.length > 0 && (
-                                  <div className="border-t border-slate-800/80 pt-3">
-                                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                                      Identified Key Actors / Roles
+                                  <div className="border-t border-[#0c142c] pt-3.5">
+                                    <h4 className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest mb-2.5 font-mono">
+                                      {t("identified_actors")}
                                     </h4>
-                                    <div className="space-y-1.5">
+                                    <div className="space-y-2">
                                       {aiInsights.summary.important_entities.map((item, idx) => (
-                                        <div key={idx} className="text-xs text-slate-350 flex justify-between font-medium">
+                                        <div key={idx} className="text-xs text-slate-350 flex justify-between font-semibold">
                                           <span className="font-bold text-slate-200">{item.name}</span>
-                                          <span className="text-slate-500">{item.role_or_details}</span>
+                                          <span className="text-[10px] text-slate-500">{item.role_or_details}</span>
                                         </div>
                                       ))}
                                     </div>
@@ -1194,11 +1301,11 @@ export default function App() {
                               </div>
                             ) : (
                               <div className="text-center py-8">
-                                <Sparkles className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-                                <p className="text-xs text-slate-500 mb-3">No summary has been compiled yet.</p>
+                                <Sparkles className="w-6 h-6 text-slate-700 mx-auto mb-2 opacity-50" />
+                                <p className="text-xs text-slate-500 mb-3 font-semibold">No summary compiled.</p>
                                 <button
                                   onClick={handleGenerateSummary}
-                                  className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold py-1.5 px-3 rounded-lg"
+                                  className="bg-[#060c20] border border-[#0d162f] hover:bg-[#0c132f] text-slate-350 text-[10px] font-bold py-1.5 px-3.5 rounded-xl cursor-pointer transition-all"
                                 >
                                   Compile Case Summary
                                 </button>
@@ -1207,25 +1314,24 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Entities Dictionary */}
-                        <div className="bg-[#070d1e]/85 p-5 rounded-2xl border border-slate-800">
-                          <h3 className="text-xs font-semibold text-slate-455 uppercase tracking-wider mb-3">
-                            Extracted Forensic Entities
+                        {/* Forensic Entities Dictionary */}
+                        <div className="bg-[#03081a]/40 p-5 rounded-2xl border border-[#0d162f] glass">
+                          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+                            {t("extracted_entities")}
                           </h3>
                           <p className="text-[10px] text-slate-500 mb-4 leading-relaxed font-semibold">
-                            Extracted automatically from uploaded documents/images. Click on any entity filter badge to filter timeline events.
+                            {t("extracted_entities_desc")}
                           </p>
 
                           {aiInsights.entities.length > 0 ? (
                             <div className="space-y-4">
-                              {/* Group entities by type */}
                               {["NAME", "PHONE", "EMAIL", "UPI_ID", "TXN_ID", "ORGANIZATION"].map((type) => {
                                 const group = aiInsights.entities.filter((e) => e.entity_type === type);
                                 if (group.length === 0) return null;
 
                                 return (
-                                  <div key={type} className="space-y-1.5">
-                                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">
+                                  <div key={type} className="space-y-2">
+                                    <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest block font-mono">
                                       {type === "UPI_ID" ? "UPI Payments" : type === "TXN_ID" ? "Transaction References" : type + "S"}
                                     </span>
                                     <div className="flex flex-wrap gap-1.5">
@@ -1235,10 +1341,10 @@ export default function App() {
                                           <button
                                             key={idx}
                                             onClick={() => setSelectedEntityFilter(isSelected ? null : val)}
-                                            className={`text-[10px] font-semibold font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${
+                                            className={`text-[9px] font-semibold font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${
                                               isSelected
                                                 ? "bg-emerald-500/20 border-emerald-500 text-emerald-350 font-bold"
-                                                : "bg-slate-955/60 border-slate-808/80 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                                                : "bg-[#020512] border-[#0d162f] text-slate-450 hover:text-slate-200 hover:border-slate-700"
                                             }`}
                                           >
                                             {val}
@@ -1251,37 +1357,37 @@ export default function App() {
                               })}
                             </div>
                           ) : (
-                            <div className="text-center py-6 text-xs text-slate-500 italic">
-                              No entities extracted yet. Upload image/document files to run OCR analysis.
+                            <div className="text-center py-6 text-[10px] text-slate-500 italic font-semibold">
+                              {t("entities_placeholder")}
                             </div>
                           )}
                         </div>
                       </div>
 
-                      {/* Right side: Interactive Timeline (Col span 7) */}
+                      {/* Right: Interactive Forensic Timeline (Col span 7) */}
                       <div className="lg:col-span-7 space-y-6">
-                        <div className="bg-[#070d1e]/85 p-5 rounded-2xl border border-slate-800">
+                        <div className="bg-[#03081a]/40 p-5 rounded-2xl border border-[#0d162f] glass">
                           <div className="flex justify-between items-center mb-4">
                             <div>
-                              <h3 className="text-xs font-semibold text-slate-455 uppercase tracking-wider">
-                                Automated Case Investigation Timeline
+                              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                {t("automated_timeline_title")}
                               </h3>
-                              <p className="text-[10px] text-slate-550 mt-1 font-semibold">
-                                Chronological sequence of actions/events found inside case files and custody activity.
+                              <p className="text-[10px] text-slate-500 mt-1 font-semibold">
+                                {t("automated_timeline_desc")}
                               </p>
                             </div>
                             <button
                               onClick={handleGenerateTimeline}
                               disabled={isAiLoading}
-                              className="text-[10px] font-bold text-emerald-400 hover:text-emerald-500 flex items-center space-x-1"
+                              className="text-[10px] font-black text-indigo-400 hover:text-indigo-350 flex items-center space-x-1 cursor-pointer transition-all"
                             >
                               <RefreshCw className={`w-3 h-3 ${isAiLoading ? "animate-spin" : ""}`} />
-                              <span>Rebuild</span>
+                              <span>{t("rebuild")}</span>
                             </button>
                           </div>
 
                           {aiInsights.timeline.length > 0 ? (
-                            <div className="relative border-l border-slate-800 ml-3 pl-6 space-y-5 py-2">
+                            <div className="relative border-l border-[#0d162f] ml-3 pl-6 space-y-5 py-2">
                               {aiInsights.timeline
                                 .filter((ev) => !selectedEntityFilter || ev.description.toLowerCase().includes(selectedEntityFilter.toLowerCase()))
                                 .map((ev, idx) => {
@@ -1290,18 +1396,18 @@ export default function App() {
                                       ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                                       : ev.confidence === "MEDIUM"
                                       ? "bg-amber-500/10 border-amber-500/20 text-amber-450"
-                                      : "bg-rose-500/10 border-rose-500/20 text-rose-450";
+                                      : "bg-rose-500/10 border-rose-500/20 text-rose-455";
 
                                   return (
                                     <div key={idx} className="relative group">
-                                      <div className="absolute -left-[31px] top-1.5 w-2 h-2 rounded-full border border-emerald-500 bg-slate-950 group-hover:scale-125 transition-transform" />
-                                      <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/25 hover:border-slate-700 transition-all space-y-2">
+                                      <div className="absolute -left-[31px] top-1.5 w-2 h-2 rounded-full border border-indigo-500 bg-[#02050f] group-hover:scale-125 transition-transform" />
+                                      <div className="p-4 rounded-xl border border-[#0d162f] bg-[#020512]/40 hover:border-slate-800 transition-all space-y-2.5">
                                         <div className="flex justify-between items-center">
-                                          <span className="text-[10px] font-bold text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-lg">
-                                            {new Date(ev.event_timestamp).toUTCString()}
+                                          <span className="text-[9px] font-bold text-slate-450 bg-[#020512] border border-[#0d162f] px-2.5 py-0.5 rounded-lg font-mono">
+                                            {formatDate(ev.event_timestamp, lang)}
                                           </span>
-                                          <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${confidenceColor}`}>
-                                            {ev.confidence || "MEDIUM"} Confidence
+                                          <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${confidenceColor}`}>
+                                            {ev.confidence || "MEDIUM"}
                                           </span>
                                         </div>
                                         <p className="text-xs text-slate-300 font-semibold leading-relaxed">
@@ -1309,9 +1415,9 @@ export default function App() {
                                         </p>
                                         
                                         {ev.supporting_evidence_ids && ev.supporting_evidence_ids.length > 0 && (
-                                          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-900/60 mt-2">
-                                            <span className="text-[9px] font-bold text-slate-550 uppercase block tracking-wider mr-1">
-                                              SUPPORTING EVIDENCE:
+                                          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[#0c142c] mt-2.5">
+                                            <span className="text-[8px] font-bold text-slate-550 uppercase tracking-widest font-mono mr-1">
+                                              {t("supporting_evidence")}:
                                             </span>
                                             {ev.supporting_evidence_ids.map((refId) => {
                                               const fileMatch = caseDetails.evidence.find((e) => e.id === refId);
@@ -1332,20 +1438,20 @@ export default function App() {
                                   );
                                 })}
                               {aiInsights.timeline.filter((ev) => !selectedEntityFilter || ev.description.toLowerCase().includes(selectedEntityFilter.toLowerCase())).length === 0 && (
-                                <div className="text-center py-6 text-xs text-slate-500">
-                                  No timeline events match the selected entity filter badge.
+                                <div className="text-center py-6 text-xs text-slate-500 font-semibold">
+                                  {t("no_timeline_match")}
                                 </div>
                               )}
                             </div>
                           ) : (
                             <div className="text-center py-8">
-                              <Sparkles className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-                              <p className="text-xs text-slate-500 mb-3">No timeline records have been analyzed.</p>
+                              <Sparkles className="w-6 h-6 text-slate-700 mx-auto mb-2 opacity-50" />
+                              <p className="text-xs text-slate-500 mb-3 font-semibold">{t("no_timeline_records")}</p>
                               <button
                                 onClick={handleGenerateTimeline}
-                                className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold py-1.5 px-3 rounded-lg"
+                                className="bg-[#060c20] border border-[#0d162f] hover:bg-[#0c132f] text-slate-350 text-[10px] font-bold py-1.5 px-3.5 rounded-xl cursor-pointer transition-all"
                               >
-                                Build Forensic Timeline
+                                {t("build_forensic_timeline")}
                               </button>
                             </div>
                           )}
@@ -1359,47 +1465,205 @@ export default function App() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#02050e]/50">
+          /* Empty Case Room State */
+          <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-[#02050f]/30">
             <div className="relative mb-6">
-              <div className="w-24 h-24 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600">
-                <Folder className="w-12 h-12" />
+              <div className="w-24 h-24 rounded-3xl bg-[#03081a] border border-[#0d162f] flex items-center justify-center text-slate-700">
+                <Folder className="w-12 h-12 opacity-60" />
               </div>
-              <div className="absolute -bottom-2 -right-2 bg-emerald-500/10 p-2.5 rounded-2xl border border-emerald-500/20 text-emerald-400">
-                <Shield className="w-6 h-6" />
+              <div className="absolute -bottom-2 -right-2 bg-emerald-500/10 p-2.5 rounded-2xl border border-emerald-500/25 text-emerald-450 shadow-lg">
+                <Shield className="w-5 h-5 animate-pulse" />
               </div>
             </div>
-            <h2 className="text-xl font-bold text-slate-200">No Forensic Case Selected</h2>
-            <p className="text-sm text-slate-500 max-w-sm mt-2 mb-6 leading-relaxed font-semibold">
-              Select an ongoing digital investigation from the sidebar list, or initialize a new case file structure to upload evidence.
+            <h2 className="text-lg font-black text-slate-205">{t("no_case_selected_title")}</h2>
+            <p className="text-xs text-slate-500 max-w-xs mt-2 mb-6 leading-relaxed font-semibold">
+              {t("no_case_selected_desc")}
             </p>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
               <button
                 onClick={handleSeedDemoCase}
-                className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-emerald-400 font-semibold py-2 px-6 rounded-xl flex items-center space-x-2 text-sm transition-all cursor-pointer"
+                className="bg-[#060c20] border border-[#0d162f] hover:border-slate-800 text-emerald-400 hover:text-emerald-300 font-bold py-2.5 px-5 rounded-xl flex items-center space-x-2 text-xs transition-all cursor-pointer"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>Seed Demo Case</span>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{t("seed_demo_case")}</span>
               </button>
               <button
                 onClick={() => setIsCreateModalOpen(true)}
-                className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold py-2 px-6 rounded-xl flex items-center space-x-2 text-sm shadow-lg shadow-emerald-500/10 cursor-pointer"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl flex items-center space-x-2 text-xs shadow-lg shadow-indigo-600/10 cursor-pointer border border-indigo-500/30"
               >
-                <Plus className="w-4 h-4" />
-                <span>Open New Case</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t("open_new_case")}</span>
               </button>
             </div>
           </div>
         )}
       </main>
 
+      {/* Floating Settings Panel (yutaabe/Antigravity style Drawer) */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/70 backdrop-blur-sm transition-all animate-fade-in">
+          <div className="w-96 bg-[#03081a] border-l border-[#0d162f] h-full p-6 shadow-2xl flex flex-col justify-between z-50 relative">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-[#0d162f] mb-6">
+                <div className="flex items-center space-x-2.5">
+                  <Languages className="w-4 h-4 text-indigo-400" />
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-205">{t("settings_title")}</h3>
+                </div>
+                <button
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="text-slate-500 hover:text-slate-350 p-1.5 rounded-lg hover:bg-[#060c20] cursor-pointer transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={saveConfiguration} className="space-y-5">
+                {/* Language selection */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                    {t("language_label")}
+                  </label>
+                  <div className="relative">
+                    <Globe className="absolute left-3.5 top-3 w-4 h-4 text-slate-550" />
+                    <select
+                      value={lang}
+                      onChange={(e) => setLang(e.target.value)}
+                      className="w-full bg-[#020512] border border-[#0d162f] rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-200 font-semibold focus:outline-none focus:border-indigo-500/50 appearance-none cursor-pointer"
+                    >
+                      <option value="en">English (India)</option>
+                      <option value="hi">हिन्दी (Hindi)</option>
+                      <option value="te">తెలుగు (Telugu)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* AI Provider selection */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                    {t("ai_provider_label")}
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 bg-[#020512] p-1.5 rounded-xl border border-[#0d162f]">
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider("gemini")}
+                      className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        aiProvider === "gemini"
+                          ? "bg-indigo-600 text-white shadow-md"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      Gemini Cloud
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider("ollama")}
+                      className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        aiProvider === "ollama"
+                          ? "bg-indigo-600 text-white shadow-md"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      Local Ollama
+                    </button>
+                  </div>
+                </div>
+
+                {/* BYOK: Gemini custom key */}
+                {aiProvider === "gemini" && (
+                  <div className="space-y-1.5 animate-slide-down">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
+                      {t("gemini_key_label")}
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-550" />
+                      <input
+                        type="password"
+                        placeholder="AIzaSy..."
+                        value={geminiApiKey}
+                        onChange={(e) => setGeminiApiKey(e.target.value)}
+                        className="w-full bg-[#020512] border border-[#0d162f] rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Ollama local settings */}
+                {aiProvider === "ollama" && (
+                  <div className="space-y-4 animate-slide-down">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                        {t("ollama_host_label")}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="http://localhost:11434"
+                        value={ollamaHost}
+                        onChange={(e) => setOllamaHost(e.target.value)}
+                        className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                        {t("ollama_model_label")}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="llama3"
+                        value={ollamaModel}
+                        onChange={(e) => setOllamaModel(e.target.value)}
+                        className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                        {t("ollama_embed_model_label")}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="nomic-embed-text"
+                        value={ollamaEmbedModel}
+                        onChange={(e) => setOllamaEmbedModel(e.target.value)}
+                        className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-lg shadow-indigo-600/15 cursor-pointer border border-indigo-500/30 transition-all mt-4"
+                >
+                  {t("save_settings")}
+                </button>
+              </form>
+            </div>
+            
+            <div className="text-[9px] text-slate-550 border-t border-[#0d162f] pt-4 font-mono text-center">
+              TRACE v1.2.0 • BYOK & i18n Engaged
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Saved Toast Notification */}
+      {showSavedAlert && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-500 text-[#02050f] font-bold py-3 px-5 rounded-2xl flex items-center space-x-2 shadow-2xl shadow-emerald-500/10 border border-emerald-400 animate-slide-up">
+          <ShieldCheck className="w-5 h-5" />
+          <span className="text-xs uppercase tracking-wider">{t("settings_saved_alert")}</span>
+        </div>
+      )}
+
+      {/* 3. CASE INITIALIZATION MODAL */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-200 mb-4">Initialize Forensic Case File</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-lg bg-[#03081a] border border-[#0d162f] rounded-2xl p-6 shadow-2xl relative">
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-200 mb-4">{t("initialize_case_file")}</h3>
             <form onSubmit={handleCreateCase} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">
-                  Reference ID (e.g. Case Number) *
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">
+                  {t("ref_id_label")}
                 </label>
                 <input
                   type="text"
@@ -1407,13 +1671,13 @@ export default function App() {
                   placeholder="e.g. LAB-2026-004A"
                   value={createForm.reference_id}
                   onChange={(e) => setCreateForm({ ...createForm, reference_id: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 font-mono"
+                  className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 font-mono font-bold"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">
-                  Case Title *
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">
+                  {t("case_title_label")}
                 </label>
                 <input
                   type="text"
@@ -1421,36 +1685,36 @@ export default function App() {
                   placeholder="e.g. Corporate Exfiltration Analysis"
                   value={createForm.title}
                   onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 font-bold"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">
-                  Scope / Investigation Abstract
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">
+                  {t("scope_abstract_label")}
                 </label>
                 <textarea
                   placeholder="Provide scope, background, and specific hardware or source details."
                   rows={4}
                   value={createForm.description}
                   onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 resize-none"
+                  className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 resize-none font-semibold"
                 />
               </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-800">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-[#0d162f] mt-6">
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-400 px-4 py-2 rounded-xl text-xs font-semibold"
+                  className="bg-[#020512] border border-[#0d162f] hover:bg-[#070e26] text-slate-400 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
-                  Cancel
+                  {t("cancel")}
                 </button>
                 <button
                   type="submit"
-                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/10"
+                  className="bg-indigo-600 hover:bg-indigo-750 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg shadow-indigo-600/10 cursor-pointer border border-indigo-500/35 transition-all"
                 >
-                  Create Case File
+                  {t("create_case_file")}
                 </button>
               </div>
             </form>
@@ -1458,20 +1722,21 @@ export default function App() {
         </div>
       )}
 
+      {/* 4. CUSTODY TRANSFER MODAL */}
       {isTransferModalOpen && transferTargetEvidence && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-200 mb-2 flex items-center space-x-2">
-              <ArrowRightLeft className="w-5 h-5 text-amber-400" />
-              <span>Transfer Custody Log</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-md bg-[#03081a] border border-[#0d162f] rounded-2xl p-6 shadow-2xl relative">
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-200 mb-2 flex items-center space-x-2">
+              <ArrowRightLeft className="w-4 h-4 text-amber-400" />
+              <span>{t("transfer_custody_log")}</span>
             </h3>
-            <p className="text-xs text-slate-500 mb-4 font-medium">
-              Logging custody change for: <span className="font-mono text-emerald-450 font-bold">{transferTargetEvidence.original_filename}</span>
+            <p className="text-[10px] text-slate-500 mb-4 font-semibold">
+              {t("logging_custody_for")}: <span className="font-mono text-emerald-450 font-bold">{transferTargetEvidence.original_filename}</span>
             </p>
             <form onSubmit={handleTransferCustody} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">
-                  Recipient Identity (e.g. Officer, Analyst) *
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">
+                  {t("recipient_identity_label")}
                 </label>
                 <input
                   type="text"
@@ -1479,13 +1744,13 @@ export default function App() {
                   placeholder="e.g. Analyst Jessica Beta"
                   value={transferForm.recipient}
                   onChange={(e) => setTransferForm({ ...transferForm, recipient: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 font-bold"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">
-                  Reason for Transfer *
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">
+                  {t("reason_for_transfer_label")}
                 </label>
                 <textarea
                   required
@@ -1493,26 +1758,26 @@ export default function App() {
                   rows={3}
                   value={transferForm.reason}
                   onChange={(e) => setTransferForm({ ...transferForm, reason: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 resize-none"
+                  className="w-full bg-[#020512] border border-[#0d162f] rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 resize-none font-semibold"
                 />
               </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-800">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-[#0d162f] mt-6">
                 <button
                   type="button"
                   onClick={() => {
                     setIsTransferModalOpen(false);
                     setTransferTargetEvidence(null);
                   }}
-                  className="bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-400 px-4 py-2 rounded-xl text-xs font-semibold"
+                  className="bg-[#020512] border border-[#0d162f] hover:bg-[#070e26] text-slate-400 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
-                  Cancel
+                  {t("cancel")}
                 </button>
                 <button
                   type="submit"
-                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/10"
+                  className="bg-indigo-600 hover:bg-indigo-750 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg shadow-indigo-600/10 cursor-pointer border border-indigo-500/35 transition-all"
                 >
-                  Log Custody Transfer
+                  {t("log_custody_transfer")}
                 </button>
               </div>
             </form>

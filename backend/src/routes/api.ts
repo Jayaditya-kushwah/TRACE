@@ -21,6 +21,16 @@ const UPLOADS_DIR = path.resolve(__dirname, "../../../uploads");
 
 const router = Router();
 
+const getAIConfig = (req: any) => {
+  return {
+    provider: (req.headers["x-ai-provider"] as string) || "gemini",
+    apiKey: (req.headers["x-ai-key"] as string) || "",
+    endpoint: (req.headers["x-ai-endpoint"] as string) || "http://localhost:11434",
+    model: (req.headers["x-ai-model"] as string) || "llama3",
+    embeddingModel: (req.headers["x-ai-embed-model"] as string) || "nomic-embed-text"
+  };
+};
+
 // Configure multer to write files to the system's temp directory
 const upload = multer({ dest: os.tmpdir() });
 
@@ -140,8 +150,9 @@ router.post("/cases/:id/evidence", upload.single("file"), async (req, res, next)
       uploaded_by
     );
 
-    // Enqueue background AI analysis job
-    aiQueue.enqueue(id, newEvidence.id);
+    // Enqueue background AI analysis job with user config headers
+    const aiConfig = getAIConfig(req);
+    aiQueue.enqueue(id, newEvidence.id, aiConfig);
 
     res.status(201).json({ success: true, data: newEvidence });
   } catch (error) {
@@ -899,14 +910,15 @@ router.get("/cases/:id/ai-insights", async (req, res, next) => {
 router.post("/cases/:id/ai-timeline", async (req, res, next) => {
   try {
     const id = req.params.id as string;
-    console.log(`Manually triggering AI Timeline generation for case ${id}`);
-    const timelineEvents = await AIService.generateTimeline(id);
+    const aiConfig = getAIConfig(req);
+    console.log(`Manually triggering AI Timeline generation for case ${id} with provider ${aiConfig.provider}`);
+    const timelineEvents = await AIService.generateTimeline(id, aiConfig);
     await AIService.saveTimelineEvents(id, timelineEvents);
 
     // Save embeddings for timeline events
     for (const ev of timelineEvents) {
       const eventText = `Timeline Event: ${ev.description} (Timestamp: ${ev.event_timestamp}, Confidence: ${ev.confidence})`;
-      const evEmbedding = await AIService.generateEmbedding(eventText);
+      const evEmbedding = await AIService.generateEmbedding(eventText, aiConfig);
       await pool.query(
         `INSERT INTO evidence_embeddings (case_id, evidence_id, content_type, raw_content, embedding)
          VALUES ($1, NULL, 'TIMELINE_EVENT', $2, $3::vector)`,
@@ -924,13 +936,14 @@ router.post("/cases/:id/ai-timeline", async (req, res, next) => {
 router.post("/cases/:id/ai-summarize", async (req, res, next) => {
   try {
     const id = req.params.id as string;
-    console.log(`Manually triggering AI Summary generation for case ${id}`);
-    const summaryObj = await AIService.generateCaseSummary(id);
+    const aiConfig = getAIConfig(req);
+    console.log(`Manually triggering AI Summary generation for case ${id} with provider ${aiConfig.provider}`);
+    const summaryObj = await AIService.generateCaseSummary(id, aiConfig);
     await AIService.saveCaseSummary(id, summaryObj);
 
     // Save summary embedding
     const summaryText = `Case Summary Executive Summary:\n${summaryObj.executive_summary}`;
-    const summaryEmbedding = await AIService.generateEmbedding(summaryText);
+    const summaryEmbedding = await AIService.generateEmbedding(summaryText, aiConfig);
     await AIService.saveEmbedding(id, null, "CASE_SUMMARY", summaryText, summaryEmbedding);
 
     res.json({ success: true, data: summaryObj });
@@ -944,12 +957,13 @@ router.get("/cases/:id/ai-search", async (req, res, next) => {
   try {
     const id = req.params.id as string;
     const query = req.query.q as string;
+    const aiConfig = getAIConfig(req);
 
     if (!query) {
       return res.status(400).json({ success: false, error: "Missing query parameter 'q'" });
     }
 
-    const results = await AIService.searchSemantic(id, query, 10);
+    const results = await AIService.searchSemantic(id, query, 10, aiConfig);
     res.json({ success: true, data: results });
   } catch (error) {
     next(error);

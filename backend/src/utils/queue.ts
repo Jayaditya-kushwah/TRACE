@@ -12,6 +12,7 @@ const UPLOADS_DIR = path.resolve(__dirname, "../../../uploads");
 interface Job {
   caseId: string;
   evidenceId: string;
+  aiConfig?: any;
 }
 
 class JobQueue {
@@ -21,9 +22,9 @@ class JobQueue {
   /**
    * Enqueue a new background AI analysis job
    */
-  public enqueue(caseId: string, evidenceId: string) {
+  public enqueue(caseId: string, evidenceId: string, aiConfig?: any) {
     console.log(`Enqueuing background AI analysis job for evidence ${evidenceId} in case ${caseId}`);
-    this.queue.push({ caseId, evidenceId });
+    this.queue.push({ caseId, evidenceId, aiConfig });
     this.processNext();
   }
 
@@ -36,7 +37,7 @@ class JobQueue {
     }
 
     this.isProcessing = true;
-    const { caseId, evidenceId } = job;
+    const { caseId, evidenceId, aiConfig } = job;
 
     try {
       console.log(`Starting background AI analysis for evidence ${evidenceId}...`);
@@ -90,23 +91,23 @@ class JobQueue {
       await AIService.saveOCRText(evidenceId, extractedText);
 
       // 4. Extract and save Entities
-      const entities = await AIService.extractEntities(caseId, evidenceId, extractedText);
+      const entities = await AIService.extractEntities(caseId, evidenceId, extractedText, aiConfig);
       await AIService.saveEntities(caseId, evidenceId, entities);
 
       // 5. Generate and save Embedding for OCR Text
       const textForEmbedding = `File: ${evidence.original_filename}\nText Content:\n${extractedText}`;
-      const ocrEmbedding = await AIService.generateEmbedding(textForEmbedding);
+      const ocrEmbedding = await AIService.generateEmbedding(textForEmbedding, aiConfig);
       await AIService.saveEmbedding(caseId, evidenceId, "OCR_TEXT", textForEmbedding, ocrEmbedding);
 
       // 6. Regenerate automated timeline events
       console.log(`Rebuilding case timeline for ${caseId}...`);
-      const timelineEvents = await AIService.generateTimeline(caseId);
+      const timelineEvents = await AIService.generateTimeline(caseId, aiConfig);
       await AIService.saveTimelineEvents(caseId, timelineEvents);
 
       // Save semantic embeddings for each timeline event
       for (const ev of timelineEvents) {
         const eventText = `Timeline Event: ${ev.description} (Timestamp: ${ev.event_timestamp}, Confidence: ${ev.confidence})`;
-        const evEmbedding = await AIService.generateEmbedding(eventText);
+        const evEmbedding = await AIService.generateEmbedding(eventText, aiConfig);
         // We link timeline embeddings to caseId with null evidenceId, and content_type = 'TIMELINE_EVENT'
         // But since we want to be able to search them, we store it
         await pool.query(
@@ -118,12 +119,12 @@ class JobQueue {
 
       // 7. Regenerate case summary
       console.log(`Rebuilding case summary for ${caseId}...`);
-      const summaryObj = await AIService.generateCaseSummary(caseId);
+      const summaryObj = await AIService.generateCaseSummary(caseId, aiConfig);
       await AIService.saveCaseSummary(caseId, summaryObj);
 
       // Save semantic embedding for executive summary
       const summaryText = `Case Summary Executive Summary:\n${summaryObj.executive_summary}`;
-      const summaryEmbedding = await AIService.generateEmbedding(summaryText);
+      const summaryEmbedding = await AIService.generateEmbedding(summaryText, aiConfig);
       await AIService.saveEmbedding(caseId, null, "CASE_SUMMARY", summaryText, summaryEmbedding);
 
       // Update status to COMPLETED
