@@ -68,3 +68,15 @@ To maintain trust, the system must guarantee:
 * **Linting & Formatting:** Prettier and ESLint must pass before any commits are pushed.
 * **Git Commit Hygiene:** Commits must follow Conventional Commits (e.g., `feat:`, `fix:`, `docs:`, `refactor:`).
 * **Testing:** Critical utilities (especially the hashing algorithm and the audit log hash-chain validator) must have 100% test coverage.
+
+---
+
+## 8. AI Principles
+
+To ensure that the integration of artificial intelligence maintains investigative integrity, transparency, and ethical compliance, the following principles govern all AI capabilities in TRACE:
+* **Advisory Role Only:** All AI outputs—including summaries, timeline reconstructions, and extracted entities—are strictly advisory. They are designed to assist human investigators, not replace human judgment.
+* **Mandatory Explainability:** Every AI-suggested event or claim must be explainable. The system must display the underlying logic, heuristics, or prompt rationale to the user.
+* **Evidence Referencing (Citations):** AI-generated text, timeline events, and case summaries must cite the specific source evidence (such as the evidence file ID or OCR text fragment) from which they were derived.
+* **No Authenticity Claims:** The AI Processing Layer must not determine or certify the absolute truth or authenticity of any evidence file. Certifications are restricted to cryptographic integrity checks (SHA-256 matches) of the uploaded files.
+* **No Legal Conclusions:** The system must not make legal conclusions, characterize actions as unlawful, or suggest legal charges or statutes.
+* **No Guilt or Innocence Determination:** Under no circumstances shall the AI determine, infer, or output declarations regarding the guilt or innocence of any individual, organization, or suspect.

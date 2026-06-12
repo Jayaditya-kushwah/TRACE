@@ -149,6 +149,62 @@ Current workflows frequently rely on spreadsheets, email threads, or shared dire
      * The generated PDF report.
   2. The ZIP file must download directly via the browser and be readable by standard operating system archive extractors.
 
+### FR-10: OCR Processing
+* **Description:** Automatically extract readable text from uploaded image evidence (e.g., screenshots, photos, scanned documents) and associate the extracted text with the corresponding evidence record.
+* **Acceptance Criteria:**
+  1. Image upload (PNG, JPEG, WebP, TIFF) triggers server-side OCR processing.
+  2. Extracted text is stored in the database and linked to the evidence ID.
+  3. OCR extraction must support multi-line text and preserve basic semantic layouts where possible.
+  4. OCR processing status (e.g., `PENDING`, `COMPLETED`, `FAILED`) and timestamps must be logged and displayed in the UI.
+  5. The extracted text is indexed and made searchable.
+* **Success Conditions:**
+  1. Uploading a mobile screenshot of a chat thread successfully extracts all visible chat text.
+  2. OCR text is displayed in the evidence detail view.
+
+### FR-11: Entity Extraction
+* **Description:** Scan text extracts (OCR results, uploaded PDFs, raw notes, or text documents) to identify and catalog key investigative entities.
+* **Acceptance Criteria:**
+  1. The system must extract the following entity types: Names, Phone Numbers, Emails, URLs, UPI IDs, Transaction IDs, Dates, Times, and Organizations.
+  2. Extracted entities must be saved as structured objects in the database and linked to the source evidence and parent case.
+  3. The UI must show a categorized list of extracted entities alongside the evidence detail page.
+  4. Extracted entities must be fully indexed for search.
+* **Success Conditions:**
+  1. Uploading a PDF receipt containing a transaction ID and a UPI ID extracts both entities and links them to the case.
+  2. Clicking on an entity shows all other evidence items in the case sharing the same entity.
+
+### FR-12: Automated Timeline Reconstruction
+* **Description:** Synthesize chronological events from evidence metadata, OCR text, extracted entities, and custody logs into an advisory timeline.
+* **Acceptance Criteria:**
+  1. The system automatically processes case evidence to identify chronologically significant text fragments (e.g., date/time references in chat logs or invoices).
+  2. Every AI-generated timeline event must cite and link to the specific supporting evidence (source file, OCR text chunk, or metadata).
+  3. Every suggested timeline event must include an explainability note detailing the logic or source data used for the suggestion.
+  4. The AI timeline must be displayed visually as an advisory layer distinct from the immutable cryptographic custody timeline.
+* **Success Conditions:**
+  1. An event "June 3: Payment Requested" is generated from a screenshot showing a chat message from that date.
+  2. The investigator can hover or click the event to view the source screenshot highlighted.
+
+### FR-13: AI Case Summarization
+* **Description:** Provide a dynamic, structured summary of the case based on all available evidence metadata, OCR text, extracted entities, and timeline events.
+* **Acceptance Criteria:**
+  1. The summary generator must clearly separate verified facts (e.g., uploaded file details, hashes, custody handoffs) from AI inferences (e.g., relationships, chronological flow).
+  2. Every claim in the case summary must cite one or more pieces of supporting evidence by ID/name.
+  3. Summaries must not make legal conclusions, determine guilt/innocence, or certify the absolute authenticity of evidence.
+  4. Users must be able to manually trigger regeneration of the summary at any time to reflect the latest state of the case.
+* **Success Conditions:**
+  1. Generating a case summary produces a structured report citing evidence files for its chronological narrative.
+  2. Re-summarizing after uploading a new file updates the summary automatically with new citations.
+
+### FR-14: Natural Language Search
+* **Description:** Enable natural language query execution across all case files, metadata, OCR text, extracted entities, timeline events, and case summaries.
+* **Acceptance Criteria:**
+  1. The search input must accept free-form natural language queries (e.g., "Show all evidence mentioning ₹5000", "Find messages from June 3").
+  2. The search index must cover OCR text, extracted entities, metadata fields, timeline events, and case summaries.
+  3. Matches must be returned with relevance scores, highlighting matched terms or semantic context in the results.
+  4. The backend uses pgvector for semantic vector comparisons alongside relational text searches in PostgreSQL.
+* **Success Conditions:**
+  1. Querying "payment requests" returns screenshots and documents where the OCR text or entities indicate a request for payment.
+  2. Results are displayed clearly, linking directly to the corresponding evidence view.
+
 ---
 
 ## 8. Non-Functional Requirements

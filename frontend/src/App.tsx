@@ -1,1692 +1,1728 @@
-import React, { useState, useEffect, useRef } from "react";
-import {
-  Folder,
-  Plus,
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  Folder, 
+  FileText, 
+  Upload, 
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle, 
+  CornerDownRight, 
+  Download, 
+  Search, 
+  RefreshCw, 
+  Plus, 
+  Globe, 
+  Activity, 
+  Cpu, 
+  Link as LinkIcon,
   Shield,
-  ShieldCheck,
-  Upload,
-  ArrowRightLeft,
-  Copy,
-  Check,
-  FileText,
-  Image as ImageIcon,
-  Film,
-  FileCode,
-  File,
-  AlertTriangle,
-  Download,
-  RefreshCw,
-  Sparkles,
-  Search,
+  Eye,
+  ChevronRight,
+  Hash,
+  Clock,
   User,
-  Settings,
-  Globe,
   X,
-  Database,
-  Activity,
-  AlertOctagon
-} from "lucide-react";
-import { translations, formatBytes, formatDate } from "./i18n/translations";
-import { InteractiveMeshCanvas } from "./InteractiveMeshCanvas";
+  ArrowRight,
+  Zap,
+  Layers,
+  Lock,
+  Fingerprint,
+  Terminal,
+  Sparkles,
+  ChevronDown,
+  Settings
+} from 'lucide-react';
+import { Suspense } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { ParticleSystem, BackgroundShader } from './components/Scene';
+import LandingPage from './components/LandingPage';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || "";
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-interface Case {
-  id: string;
-  reference_id: string;
-  title: string;
-  description: string;
-  created_by: string;
-  created_at: string;
-}
+// ─────────────────────────────────────────
+// Language translation dictionary
+// ─────────────────────────────────────────
+const UI_TRANSLATIONS = {
+  en: {
+    brand: "TRACE",
+    subtitle: "Evidence Integrity & Custody Chain Platform",
+    casesTitle: "ACTIVE CASES",
+    searchPlaceholder: "Search cases...",
+    initCase: "INIT CASE",
+    utcClock: "UTC",
+    localClock: "LOCAL",
+    refId: "Reference ID",
+    createdBy: "Created By",
+    createdAt: "Created At",
+    auditIntegrity: "AUDIT INTEGRITY",
+    exportReport: "EXPORT PDF",
+    downloadBundle: "DOWNLOAD ZIP",
+    evidenceTitle: "INGESTED EVIDENCE",
+    dropzoneText: "DRAG & DROP EVIDENCE",
+    browseFiles: "or click to browse files",
+    verifyFile: "VERIFY",
+    transferCustody: "TRANSFER",
+    timelineTab: "CUSTODY CHAIN",
+    aiAdvisoryTab: "AI ADVISORY",
+    searchTab: "SEMANTIC SEARCH",
+    aiSummary: "AI Case Summary",
+    regenerate: "REGENERATE",
+    extractedEntities: "Extracted Entities",
+    suggestedTimeline: "AI Advisory Timeline",
+    searchPrompt: "Query evidence semantics...",
+    searchButton: "SEARCH",
+    verifyTitle: "Verify Evidence",
+    statusVerified: "VERIFIED",
+    statusTampered: "TAMPERED",
+    statusMissing: "MISSING",
+    chainIntact: "CRYPTOGRAPHIC CHAIN INTACT",
+    chainBroken: "CHAIN COMPROMISED",
+    loading: "PROCESSING...",
+    creator: "Creator Name",
+    refIdLabel: "Ref ID (alphanumeric, 3-20 chars)",
+    titleLabel: "Case Title",
+    descLabel: "Description",
+    cancel: "CANCEL",
+    submit: "INITIALIZE",
+    transferTitle: "Transfer Custody",
+    recipient: "Recipient Name",
+    actor: "Actor (Transferring Person)",
+    reason: "Reason for transfer",
+    transferSubmit: "EXECUTE TRANSFER",
+    gameTitle: "LIGHTS OUT REACTION",
+    gameIntro: "Press SHIFT or click to start. React when screen flashes green!",
+    gameWait: "WAIT FOR GREEN...",
+    gameClick: "PRESS NOW!!!",
+    gameResult: "Reaction Time",
+    gameTooEarly: "TOO EARLY! Wait for the flash.",
+    noCaseSelected: "Select a case from the sidebar or create a new one to begin.",
+    heroTitle: "TRACE DASHBOARD",
+    heroDesc: "Tamper-Resistant Audit Chain for Evidence",
+    caseCount: "cases",
+    evidenceCount: "evidence files",
+    newCase: "NEW CASE",
+    systemOnline: "SYSTEM ONLINE",
+    loadDemo: "LOAD DEMO",
+    generating: "GENERATING...",
+    noCasesFound: "No cases found",
+    game: "GAME"
+  },
+  hi: {
+    brand: "ट्रेस",
+    subtitle: "साक्ष्य अखंडता और हिरासत श्रृंखला मंच",
+    casesTitle: "सक्रिय मामले",
+    searchPlaceholder: "मामलों को खोजें...",
+    initCase: "नया मामला",
+    utcClock: "यूटीसी",
+    localClock: "स्थानीय",
+    refId: "संदर्भ आईडी",
+    createdBy: "निर्माता",
+    createdAt: "निर्माण तिथि",
+    auditIntegrity: "अखंडता जांच",
+    exportReport: "पीडीएफ रिपोर्ट",
+    downloadBundle: "ज़िप डाउनलोड",
+    evidenceTitle: "सहित साक्ष्य",
+    dropzoneText: "साक्ष्य फ़ाइल खींचें और छोड़ें",
+    browseFiles: "या ब्राउज़ करने के लिए क्लिक करें",
+    verifyFile: "सत्यापित करें",
+    transferCustody: "हस्तांतरण",
+    timelineTab: "हिरासत श्रृंखला",
+    aiAdvisoryTab: "एआई सलाहकार",
+    searchTab: "सिमेंटिक खोज",
+    aiSummary: "एआई मामला सारांश",
+    regenerate: "पुनः उत्पन्न",
+    extractedEntities: "निकाली गई संस्थाएं",
+    suggestedTimeline: "एआई सलाहकार टाइमलाइन",
+    searchPrompt: "सिमेंटिक खोज करें...",
+    searchButton: "खोजें",
+    verifyTitle: "साक्ष्य सत्यापित करें",
+    statusVerified: "सत्यापित",
+    statusTampered: "छेड़छाड़",
+    statusMissing: "लापता",
+    chainIntact: "क्रिप्टोग्राफिक श्रृंखला बरकरार",
+    chainBroken: "श्रृंखला टूट गई",
+    loading: "प्रसंस्करण...",
+    creator: "निर्माता का नाम",
+    refIdLabel: "संदर्भ आईडी (3-20 वर्ण)",
+    titleLabel: "मामला शीर्षक",
+    descLabel: "विवरण",
+    cancel: "रद्द करें",
+    submit: "आरंभ करें",
+    transferTitle: "हिरासत हस्तांतरण",
+    recipient: "प्राप्तकर्ता",
+    actor: "हस्तांतरण करने वाला",
+    reason: "कारण",
+    transferSubmit: "हस्तांतरण करें",
+    gameTitle: "लाइट्स आउट रिएक्शन",
+    gameIntro: "शिफ्ट दबाएं या क्लिक करें। हरे रंग पर प्रतिक्रिया दें!",
+    gameWait: "हरे की प्रतीक्षा...",
+    gameClick: "अब दबाएं!!!",
+    gameResult: "प्रतिक्रिया समय",
+    gameTooEarly: "बहुत जल्दी!",
+    noCaseSelected: "शुरू करने के लिए साइडबार से मामला चुनें या नया बनाएं।",
+    heroTitle: "ट्रेस डैशबोर्ड",
+    heroDesc: "साक्ष्य के लिए छेड़छाड़-प्रतिरोधी श्रृंखला",
+    caseCount: "मामले",
+    evidenceCount: "साक्ष्य फाइलें",
+    newCase: "नया मामला",
+    systemOnline: "सिस्टम ऑनलाइन",
+    loadDemo: "डेमो लोड करें",
+    generating: "उत्पन्न कर रहा है...",
+    noCasesFound: "कोई मामला नहीं मिला",
+    game: "गेम"
+  },
+  te: {
+    brand: "ట్రేస్",
+    subtitle: "సాక్ష్యం సమగ్రత & కస్టడీ గొలుసు వేదిక",
+    casesTitle: "క్రియాశీల కేసులు",
+    searchPlaceholder: "కేసుల కోసం వెతకండి...",
+    initCase: "కొత్త కేసు",
+    utcClock: "యుటిసి",
+    localClock: "స్థానిక",
+    refId: "రెఫరెన్స్ ఐడి",
+    createdBy: "సృష్టికర్త",
+    createdAt: "సృష్టించిన తేదీ",
+    auditIntegrity: "సమగ్రత తనిఖీ",
+    exportReport: "పిడిఎఫ్ నివేదిక",
+    downloadBundle: "జిప్ డౌన్‌లోడ్",
+    evidenceTitle: "సేకరించిన సాక్ష్యం",
+    dropzoneText: "సాక్ష్యం ఫైల్ ఇక్కడ వదలండి",
+    browseFiles: "లేదా క్లిక్ చేయండి",
+    verifyFile: "ధృవీకరించు",
+    transferCustody: "బదిలీ",
+    timelineTab: "కస్టడీ గొలుసు",
+    aiAdvisoryTab: "AI సలహా",
+    searchTab: "సిమాంటిక్ శోధన",
+    aiSummary: "AI కేసు సారాంశం",
+    regenerate: "తిరిగి సృష్టించు",
+    extractedEntities: "సేకరించిన సంస్థలు",
+    suggestedTimeline: "AI సలహా టైమ్‌లైన్",
+    searchPrompt: "సిమాంటిక్ శోధన చేయండి...",
+    searchButton: "శోధించు",
+    verifyTitle: "సాక్ష్యం ధృవీకరణ",
+    statusVerified: "ధృవీకరించబడింది",
+    statusTampered: "మార్చబడింది",
+    statusMissing: "కనిపించట్లేదు",
+    chainIntact: "గొలుసు సరిగ్గా ఉంది",
+    chainBroken: "గొలుసు రాజీ పడింది",
+    loading: "ప్రాసెస్ అవుతోంది...",
+    creator: "సృష్టికర్త పేరు",
+    refIdLabel: "రెఫరెన్స్ ఐడి (3-20 అక్షరాలు)",
+    titleLabel: "కేసు శీర్షిక",
+    descLabel: "వివరణ",
+    cancel: "రద్దు",
+    submit: "ప్రారంభించు",
+    transferTitle: "కస్టడీ బదిలీ",
+    recipient: "స్వీకర్త",
+    actor: "బదిలీ చేసేవారు",
+    reason: "కారణం",
+    transferSubmit: "బదిలీ చేయి",
+    gameTitle: "లైట్స్ అవుట్ రియాక్షన్",
+    gameIntro: "షిఫ్ట్ నొక్కండి. ఆకుపచ్చగా మారినప్పుడు రియాక్ట్ చేయండి!",
+    gameWait: "ఆకుపచ్చ కోసం వేచి ఉండండి...",
+    gameClick: "ఇప్పుడు నొక్కండి!!!",
+    gameResult: "ప్రతిచర్య సమయం",
+    gameTooEarly: "చాలా త్వరగా!",
+    noCaseSelected: "ప్రారంభించడానికి సైడ్‌బార్ నుండి కేసును ఎంచుకోండి.",
+    heroTitle: "ట్రేస్ డాష్‌బోర్డ్",
+    heroDesc: "సాక్ష్యం కోసం తారుమారు-నిరోధక గొలుసు",
+    caseCount: "కేసులు",
+    evidenceCount: "సాక్ష్యం ఫైళ్ళు",
+    newCase: "కొత్త కేసు",
+    systemOnline: "సిస్టమ్ ఆన్‌లైన్",
+    loadDemo: "డెమో లోడ్ చేయండి",
+    generating: "ఉత్పత్తి చేస్తోంది...",
+    noCasesFound: "కేసులు కనుగొనబడలేదు",
+    game: "ఆట"
+  }
+};
 
-interface Evidence {
-  id: string;
-  case_id: string;
-  original_filename: string;
-  stored_filename: string;
-  file_size_bytes: string;
-  mime_type: string;
-  sha256_hash: string;
-  uploaded_by: string;
-  uploaded_at: string;
-  status?: "VERIFIED" | "TAMPERED" | "MISSING";
-  recalculated_hash?: string | null;
-  processing_status?: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
-}
-
-interface CustodyLog {
-  id: string;
-  case_id: string;
-  evidence_id: string | null;
-  action_type: string;
-  actor: string;
-  details: string | null;
-  prev_log_hash: string;
-  log_hash: string;
-  created_at: string;
-}
-
-interface CaseDetails extends Case {
-  evidence: Evidence[];
-  logs: CustodyLog[];
-}
-
-interface CaseVerificationResult {
-  chain_integrity: boolean;
-  chain_error_at?: string;
-  evidence_status: Array<{
-    id: string;
-    original_filename: string;
-    sha256_hash?: string;
-    file_exists: boolean;
-    recalculated_hash: string | null;
-    status: "VERIFIED" | "TAMPERED" | "MISSING";
-  }>;
-}
-
-interface CaseAIInsights {
-  summary: { executive_summary: string; key_events: any[]; important_entities: any[] } | null;
-  entities: Array<{ id: string; entity_type: string; entity_value: string; evidence_id: string | null; original_filename: string | null }>;
-  timeline: Array<{ id: string; description: string; event_timestamp: string; confidence: string; supporting_evidence_ids: string[] }>;
-}
-
+// ─────────────────────────────────────────
+// Main App Component
+// ─────────────────────────────────────────
 export default function App() {
-  // Localization & Translations
-  const [lang, setLang] = useState<string>(() => localStorage.getItem("trace_lang") || "en");
+  const [hasEnteredApp, setHasEnteredApp] = useState<boolean>(false);
+  const [lang, setLang] = useState<'en' | 'hi' | 'te'>('en');
+  const [cases, setCases] = useState<any[]>([]);
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
+  const [activeCase, setActiveCase] = useState<any | null>(null);
   
-  // Canvas Visualization Mode
-  const [canvasMode, setCanvasMode] = useState<"WIREFRAME" | "HALFTONE" | "ORBITS">("WIREFRAME");
-
-  // AI Settings (BYOK & Local Ollama)
-  const [aiProvider, setAiProvider] = useState<string>(() => localStorage.getItem("trace_ai_provider") || "gemini");
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem("trace_gemini_key") || "");
-  const [ollamaHost, setOllamaHost] = useState<string>(() => localStorage.getItem("trace_ollama_host") || "http://localhost:11434");
-  const [ollamaModel, setOllamaModel] = useState<string>(() => localStorage.getItem("trace_ollama_model") || "llama3");
-  const [ollamaEmbedModel, setOllamaEmbedModel] = useState<string>(() => localStorage.getItem("trace_ollama_embed_model") || "nomic-embed-text");
+  // Case search filter
+  const [caseSearch, setCaseSearch] = useState<string>('');
   
-  // UI Panels
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showSavedAlert, setShowSavedAlert] = useState(false);
-
-  // Application State
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
-  const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
+  // Modals
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [showTransferModal, setShowTransferModal] = useState<boolean>(false);
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   
-  // Modals & UI Controls
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-  const [transferTargetEvidence, setTransferTargetEvidence] = useState<Evidence | null>(null);
-  const [isAuditLoading, setIsAuditLoading] = useState(false);
-  const [copiedHash, setCopiedHash] = useState<string | null>(null);
-  const [sidebarSearch, setSidebarSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"catalog" | "timeline" | "ai_hub">("catalog");
-  const [showSimulationPanel, setShowSimulationPanel] = useState(false);
+  // Modal Fields
+  const [newCaseRef, setNewCaseRef] = useState<string>('');
+  const [newCaseTitle, setNewCaseTitle] = useState<string>('');
+  const [newCaseDesc, setNewCaseDesc] = useState<string>('');
+  const [newCaseCreator, setNewCaseCreator] = useState<string>('');
+  
+  const [transferRecipient, setTransferRecipient] = useState<string>('');
+  const [transferActor, setTransferActor] = useState<string>('');
+  const [transferReason, setTransferReason] = useState<string>('');
+  const [uploadedBy, setUploadedBy] = useState<string>('Sarah Jenkins');
 
-  // AI Insights State
-  const [aiInsights, setAiInsights] = useState<CaseAIInsights>({ summary: null, entities: [], timeline: [] });
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [semanticQuery, setSemanticQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[] | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
-  const [selectedEntityFilter, setSelectedEntityFilter] = useState<string | null>(null);
+  // AI & Tab states
+  const [activeTab, setActiveTab] = useState<'timeline' | 'ai' | 'search'>('timeline');
+  const [aiSummary, setAiSummary] = useState<string>('');
+  const [aiSummaryLoading, setAiSummaryLoading] = useState<boolean>(false);
+  const [aiEntities, setAiEntities] = useState<any[]>([]);
+  const [aiTimeline, setAiTimeline] = useState<any[]>([]);
+  const [semanticSearchQuery, setSemanticSearchQuery] = useState<string>('');
+  const [semanticSearchResults, setSemanticSearchResults] = useState<any[]>([]);
+  const [semanticSearchLoading, setSemanticSearchLoading] = useState<boolean>(false);
 
-  // Form States
-  const [investigatorName, setInvestigatorName] = useState("Investigator Alpha");
-  const [createForm, setCreateForm] = useState({
-    reference_id: "",
-    title: "",
-    description: "",
-    created_by: "Investigator Alpha"
-  });
-  const [transferForm, setTransferForm] = useState({
-    actor: "Investigator Alpha",
-    recipient: "",
-    reason: ""
-  });
-
-  // Verification results state
-  const [auditResult, setAuditResult] = useState<CaseVerificationResult | null>(null);
-  const [hasAudited, setHasAudited] = useState(false);
-
-  // Drag and Drop file uploading
-  const [dragActive, setDragActive] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  // File Upload states
+  const [uploadLoading, setUploadLoading] = useState<boolean>(false);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Local clock state for corners
-  const [timeStr, setTimeStr] = useState("");
+  // Verification states
+  const [auditResult, setAuditResult] = useState<any | null>(null);
+  const [auditLoading, setAuditLoading] = useState<boolean>(false);
+  const [fileVerifyStatus, setFileVerifyStatus] = useState<Record<string, { status: string; message: string }>>({});
+
+  // BYOK Settings
+  const [hasSeenSetup, setHasSeenSetup] = useState<boolean>(localStorage.getItem('hasSeenSetup') === 'true');
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(!localStorage.getItem('hasSeenSetup'));
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(localStorage.getItem('geminiApiKey') || '');
+  const [useLocalAI, setUseLocalAI] = useState<boolean>(localStorage.getItem('useLocalAI') === 'true');
+  const [ollamaEndpoint, setOllamaEndpoint] = useState<string>(localStorage.getItem('ollamaEndpoint') || 'http://localhost:11434');
+  const [ollamaModel, setOllamaModel] = useState<string>(localStorage.getItem('ollamaModel') || 'llama3');
+
   useEffect(() => {
-    const update = () => {
-      const d = new Date();
-      setTimeStr(d.toLocaleTimeString("en-US", { hour12: false }));
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    localStorage.setItem('hasSeenSetup', String(hasSeenSetup));
+    localStorage.setItem('geminiApiKey', geminiApiKey);
+    localStorage.setItem('useLocalAI', String(useLocalAI));
+    localStorage.setItem('ollamaEndpoint', ollamaEndpoint);
+    localStorage.setItem('ollamaModel', ollamaModel);
+  }, [hasSeenSetup, geminiApiKey, useLocalAI, ollamaEndpoint, ollamaModel]);
+
+  const apiFetch = async (url: string, options: RequestInit = {}) => {
+    const headers = new Headers(options.headers || {});
+    if (geminiApiKey) headers.set('x-gemini-key', geminiApiKey);
+    if (useLocalAI) headers.set('x-use-local-ai', 'true');
+    if (ollamaEndpoint) headers.set('x-ollama-endpoint', ollamaEndpoint);
+    if (ollamaModel) headers.set('x-ollama-model', ollamaModel);
+    
+    return fetch(url, { ...options, headers });
+  };
+
+  // Translation cache
+  const [translatedContent, setTranslatedContent] = useState<Record<string, string>>({});
+
+  // Clock state
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  // Sidebar collapsed on mobile
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+
+  // Custom language dropdown
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+
+  // Demo generation
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [showDemoPrompt, setShowDemoPrompt] = useState(false);
+  const [casesLoaded, setCasesLoaded] = useState(false);
+
+  // Lights Out timing game
+  const [gameMode, setGameMode] = useState<boolean>(false);
+  const [gameState, setGameState] = useState<'idle' | 'waiting' | 'flash' | 'result'>('idle');
+  const [gameResultTime, setGameResultTime] = useState<number | null>(null);
+  const [gameFlashColor, setGameFlashColor] = useState<boolean>(false);
+  const gameTimeoutRef = useRef<any>(null);
+  const gameStartTimeRef = useRef<number>(0);
+
+  // Page load animation trigger
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  const t = UI_TRANSLATIONS[lang];
+
+  // ─── Clock ──────────────────────────────
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  // Translation Helper
-  const t = (key: string) => {
-    return translations[lang]?.[key] || translations["en"]?.[key] || key;
-  };
-
-  // Generate headers representing current AI provider configuration
-  const getAIHeaders = () => {
-    return {
-      "x-ai-provider": aiProvider,
-      "x-ai-key": geminiApiKey,
-      "x-ai-endpoint": ollamaHost,
-      "x-ai-model": ollamaModel,
-      "x-ai-embed-model": ollamaEmbedModel
-    };
-  };
-
-  // Fetch all cases on mount
-  useEffect(() => {
-    fetchCases();
+  // ─── Fetch Cases ────────────────────────
+  const fetchCases = useCallback(async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/cases`);
+      const data = await res.json();
+      if (data.success) {
+        setCases(data.data);
+        setCasesLoaded(true);
+        // Show demo prompt if no cases exist
+        if (data.data.length === 0) {
+          setShowDemoPrompt(true);
+        }
+      }
+    } catch (e) { console.error('Error fetching cases:', e); }
   }, []);
 
-  // Fetch case details when selectedCaseId changes
+  useEffect(() => { fetchCases(); }, [fetchCases]);
+
+  // ─── Generate Demo Data ─────────────────
+  const handleGenerateDemo = async () => {
+    setDemoLoading(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/demo`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setShowDemoPrompt(false);
+        await fetchCases();
+        setActiveCaseId(data.data.case_id);
+      } else {
+        alert('Error: ' + data.error);
+      }
+    } catch (e) {
+      console.error('Demo generation failed:', e);
+    }
+    setDemoLoading(false);
+  };
+
+  // ─── Fetch Active Case ──────────────────
+  const fetchCaseDetails = useCallback(async (id: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/cases/${id}`);
+      const data = await res.json();
+      if (data.success) {
+        setActiveCase(data.data);
+        setAuditResult(null);
+        setFileVerifyStatus({});
+        setTranslatedContent({});
+        fetchCaseAiData(id);
+      }
+    } catch (e) { console.error('Error fetching case details:', e); }
+  }, []);
+
   useEffect(() => {
-    if (selectedCaseId) {
-      fetchCaseDetails(selectedCaseId);
-      fetchAiInsights(selectedCaseId);
-      setAuditResult(null);
-      setHasAudited(false);
-      setSearchResults(null);
-      setSemanticQuery("");
-      setSelectedEntityFilter(null);
-    } else {
-      setCaseDetails(null);
-      setAiInsights({ summary: null, entities: [], timeline: [] });
-    }
-  }, [selectedCaseId]);
+    if (activeCaseId) fetchCaseDetails(activeCaseId);
+    else setActiveCase(null);
+  }, [activeCaseId, fetchCaseDetails]);
 
-  const saveConfiguration = (e: React.FormEvent) => {
-    e.preventDefault();
-    localStorage.setItem("trace_lang", lang);
-    localStorage.setItem("trace_ai_provider", aiProvider);
-    localStorage.setItem("trace_gemini_key", geminiApiKey);
-    localStorage.setItem("trace_ollama_host", ollamaHost);
-    localStorage.setItem("trace_ollama_model", ollamaModel);
-    localStorage.setItem("trace_ollama_embed_model", ollamaEmbedModel);
-    
-    setShowSavedAlert(true);
-    setTimeout(() => setShowSavedAlert(false), 3000);
-    setIsSettingsOpen(false);
-    
-    if (selectedCaseId) {
-      fetchAiInsights(selectedCaseId);
-    }
-  };
-
-  const fetchAiInsights = async (caseId: string) => {
-    setIsAiLoading(true);
+  const fetchCaseAiData = async (caseId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/cases/${caseId}/ai-insights`);
-      const json = await res.json();
-      if (json.success) {
-        setAiInsights(json.data);
-      }
-    } catch (err) {
-      console.error("Error fetching AI insights:", err);
-    } finally {
-      setIsAiLoading(false);
+      const entRes = await apiFetch(`${API_BASE}/cases/${caseId}/entities`);
+      const entData = await entRes.json();
+      if (entData.success) setAiEntities(entData.data);
+
+      const timelineRes = await apiFetch(`${API_BASE}/cases/${caseId}/timeline-ai`);
+      const timelineData = await timelineRes.json();
+      if (timelineData.success) setAiTimeline(timelineData.data);
+
+      setAiSummaryLoading(true);
+      const sumRes = await apiFetch(`${API_BASE}/cases/${caseId}/summary`);
+      const sumData = await sumRes.json();
+      if (sumData.success) setAiSummary(sumData.data.summary_text);
+      setAiSummaryLoading(false);
+    } catch (e) {
+      console.error('Error fetching AI insights:', e);
+      setAiSummaryLoading(false);
     }
   };
 
-  const handleGenerateTimeline = async () => {
-    if (!selectedCaseId) return;
-    setIsAiLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-timeline`, {
-        method: "POST",
-        headers: getAIHeaders()
-      });
-      const json = await res.json();
-      if (json.success) {
-        await fetchAiInsights(selectedCaseId);
-        alert(lang === "hi" ? "समयरेखा सफलतापूर्वक तैयार की गई!" : lang === "te" ? "కాలక్రమం విజయవంతంగా నిర్మించబడింది!" : "AI Forensic Timeline generated successfully!");
+  // ─── Game Logic ─────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        if (gameMode) handleGameTrigger();
+        else { setGameMode(true); setGameState('idle'); }
       }
-    } catch (err: any) {
-      console.error(err);
-      alert("Error: " + err.message);
-    } finally {
-      setIsAiLoading(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gameMode, gameState]);
+
+  const handleGameTrigger = () => {
+    if (gameState === 'idle') {
+      setGameState('waiting');
+      const delay = 1000 + Math.random() * 3000;
+      gameTimeoutRef.current = setTimeout(() => {
+        setGameState('flash');
+        setGameFlashColor(true);
+        gameStartTimeRef.current = Date.now();
+      }, delay);
+    } else if (gameState === 'waiting') {
+      clearTimeout(gameTimeoutRef.current);
+      setGameState('result');
+      setGameResultTime(-1);
+    } else if (gameState === 'flash') {
+      const reaction = Date.now() - gameStartTimeRef.current;
+      setGameState('result');
+      setGameResultTime(reaction);
+      setGameFlashColor(false);
+    } else if (gameState === 'result') {
+      setGameState('idle');
+      setGameResultTime(null);
     }
   };
 
-  const handleGenerateSummary = async () => {
-    if (!selectedCaseId) return;
-    setIsAiLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-summarize`, {
-        method: "POST",
-        headers: getAIHeaders()
-      });
-      const json = await res.json();
-      if (json.success) {
-        await fetchAiInsights(selectedCaseId);
-        alert(lang === "hi" ? "मामला सारांश सफलतापूर्वक तैयार किया गया!" : lang === "te" ? "కేసు సారాంశం విజయవంతంగా నిర్మించబడింది!" : "AI Case Summary generated successfully!");
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert("Error: " + err.message);
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
-  const handleSemanticSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCaseId || !semanticQuery.trim()) return;
-    setIsSearching(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/ai-search?q=${encodeURIComponent(semanticQuery)}`, {
-        headers: getAIHeaders()
-      });
-      const json = await res.json();
-      if (json.success) {
-        setSearchResults(json.data);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert("Search Error: " + err.message);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const fetchCases = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/cases`);
-      const json = await res.json();
-      if (json.success) {
-        setCases(json.data);
-      }
-    } catch (err) {
-      console.error("Error fetching cases:", err);
-    }
-  };
-
-  const fetchCaseDetails = async (caseId: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/cases/${caseId}`);
-      const json = await res.json();
-      if (json.success) {
-        setCaseDetails(json.data);
-      }
-    } catch (err) {
-      console.error("Error fetching case details:", err);
-    }
-  };
-
+  // ─── CRUD Handlers ──────────────────────
   const handleCreateCase = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newCaseRef || !newCaseTitle || !newCaseCreator) return;
     try {
-      const res = await fetch(`${API_BASE}/api/cases`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...createForm,
-          created_by: investigatorName
-        })
+      const res = await apiFetch(`${API_BASE}/cases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference_id: newCaseRef, title: newCaseTitle, description: newCaseDesc, created_by: newCaseCreator })
       });
-      const json = await res.json();
-      if (json.success) {
-        await fetchCases();
-        setSelectedCaseId(json.data.id);
-        setIsCreateModalOpen(false);
-        setCreateForm({ reference_id: "", title: "", description: "", created_by: investigatorName });
-      } else {
-        alert(json.error || "Failed to create case");
-      }
-    } catch (err) {
-      console.error("Error creating case:", err);
-    }
+      const data = await res.json();
+      if (data.success) {
+        setShowCreateModal(false);
+        setNewCaseRef(''); setNewCaseTitle(''); setNewCaseDesc(''); setNewCaseCreator('');
+        fetchCases();
+        setActiveCaseId(data.data.id);
+      } else { alert('Error: ' + data.error); }
+    } catch (err) { console.error(err); }
   };
 
   const handleTransferCustody = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transferTargetEvidence) return;
+    if (!selectedEvidenceId || !transferActor || !transferRecipient || !transferReason) return;
     try {
-      const res = await fetch(`${API_BASE}/api/evidence/${transferTargetEvidence.id}/transfer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          actor: investigatorName,
-          recipient: transferForm.recipient,
-          reason: transferForm.reason
-        })
+      const res = await apiFetch(`${API_BASE}/evidence/${selectedEvidenceId}/transfer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor: transferActor, recipient: transferRecipient, reason: transferReason })
       });
-      const json = await res.json();
-      if (json.success) {
-        if (selectedCaseId) {
-          await fetchCaseDetails(selectedCaseId);
-        }
-        setIsTransferModalOpen(false);
-        setTransferForm({ actor: investigatorName, recipient: "", reason: "" });
-        setTransferTargetEvidence(null);
-      } else {
-        alert(json.error || "Failed to transfer custody");
-      }
-    } catch (err) {
-      console.error("Error transferring custody:", err);
-    }
+      const data = await res.json();
+      if (data.success) {
+        setShowTransferModal(false);
+        setTransferActor(''); setTransferRecipient(''); setTransferReason('');
+        if (activeCaseId) fetchCaseDetails(activeCaseId);
+      } else { alert('Error: ' + data.error); }
+    } catch (err) { console.error(err); }
   };
 
   const handleAuditCase = async () => {
-    if (!selectedCaseId) return;
-    setIsAuditLoading(true);
+    if (!activeCaseId) return;
+    setAuditLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/verify`, { method: "POST" });
-      const json = await res.json();
-      if (json.success) {
-        setAuditResult(json.data);
-        setHasAudited(true);
+      const res = await apiFetch(`${API_BASE}/cases/${activeCaseId}/verify`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) setAuditResult(data.data);
+    } catch (e) { console.error('Audit failed:', e); }
+    setAuditLoading(false);
+  };
+
+  const handleVerifyEvidence = async (evidenceId: string) => {
+    setFileVerifyStatus(prev => ({ ...prev, [evidenceId]: { status: 'LOADING', message: 'Verifying...' } }));
+    try {
+      const res = await apiFetch(`${API_BASE}/evidence/${evidenceId}/verify`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setFileVerifyStatus(prev => ({ ...prev, [evidenceId]: { status: data.data.fileStatus, message: data.data.message } }));
+        if (activeCaseId) {
+          const detailRes = await apiFetch(`${API_BASE}/cases/${activeCaseId}`);
+          const detailData = await detailRes.json();
+          if (detailData.success) setActiveCase(detailData.data);
+        }
       }
-    } catch (err) {
-      console.error("Error auditing case:", err);
-    } finally {
-      setIsAuditLoading(false);
+    } catch (e) {
+      console.error(e);
+      setFileVerifyStatus(prev => ({ ...prev, [evidenceId]: { status: 'ERROR', message: 'API failed.' } }));
     }
+  };
+
+  const handleProcessEvidenceAI = async (evidenceId: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/evidence/${evidenceId}/process`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(() => { if (activeCaseId) fetchCaseAiData(activeCaseId); }, 3000);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleSemanticSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeCaseId || !semanticSearchQuery) return;
+    setSemanticSearchLoading(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ case_id: activeCaseId, query: semanticSearchQuery })
+      });
+      const data = await res.json();
+      if (data.success) setSemanticSearchResults(data.data);
+    } catch (err) { console.error(err); }
+    setSemanticSearchLoading(false);
+  };
+
+  const handleFileDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!activeCaseId) return;
+    const files = e.dataTransfer.files;
+    if (files.length > 0) uploadFile(files[0]);
   };
 
   const uploadFile = async (file: File) => {
-    if (!selectedCaseId) return;
-    setIsUploading(true);
+    setUploadLoading(true);
     const formData = new FormData();
-    formData.append("file", file);
-    formData.append("uploaded_by", investigatorName);
-
+    formData.append('file', file);
+    formData.append('uploaded_by', uploadedBy);
     try {
-      const res = await fetch(`${API_BASE}/api/cases/${selectedCaseId}/evidence`, {
-        method: "POST",
-        headers: getAIHeaders(),
-        body: formData
+      const res = await apiFetch(`${API_BASE}/cases/${activeCaseId}/evidence`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) {
+        fetchCaseDetails(activeCaseId!);
+        handleProcessEvidenceAI(data.data.id);
+      } else { alert('Upload Error: ' + data.error); }
+    } catch (err) { console.error(err); }
+    setUploadLoading(false);
+  };
+
+  const handleRegenerateSummary = async () => {
+    if (!activeCaseId) return;
+    setAiSummaryLoading(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/cases/${activeCaseId}/summary?regenerate=true`);
+      const data = await res.json();
+      if (data.success) setAiSummary(data.data.summary_text);
+    } catch (e) { console.error(e); }
+    setAiSummaryLoading(false);
+  };
+
+  // Translation helper
+  const getTranslation = async (text: string, cacheKey: string) => {
+    if (lang === 'en') return text;
+    const key = `${lang}_${cacheKey}`;
+    if (translatedContent[key]) return;
+    try {
+      const res = await apiFetch(`${API_BASE}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang })
       });
-      const json = await res.json();
-      if (json.success) {
-        await fetchCaseDetails(selectedCaseId);
-        if (hasAudited) {
-          handleAuditCase();
-        }
-      } else {
-        alert(json.error || "Failed to upload file");
-      }
-    } catch (err) {
-      console.error("Error uploading file:", err);
-      alert("Error uploading file to server");
-    } finally {
-      setIsUploading(false);
-    }
+      const data = await res.json();
+      if (data.success) setTranslatedContent(prev => ({ ...prev, [key]: data.data.translated }));
+    } catch (e) { console.error(e); }
   };
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      uploadFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      uploadFile(e.target.files[0]);
-    }
-  };
-
-  const handleTamperFile = async (evidenceId: string) => {
-    if (!selectedCaseId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/simulate/tamper-file`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ case_id: selectedCaseId, evidence_id: evidenceId })
+  useEffect(() => {
+    if (lang !== 'en' && activeCase) {
+      if (activeCase.title) getTranslation(activeCase.title, `case_title_${activeCase.id}`);
+      if (activeCase.description) getTranslation(activeCase.description, `case_desc_${activeCase.id}`);
+      if (aiSummary) getTranslation(aiSummary, `summary_${activeCase.id}`);
+      
+      // Translate timeline
+      aiTimeline.forEach(evt => {
+        getTranslation(evt.title, `tl_title_${evt.id}`);
+        getTranslation(evt.description, `tl_desc_${evt.id}`);
+        getTranslation(evt.explanation, `tl_exp_${evt.id}`);
       });
-      const json = await res.json();
-      if (json.success) {
-        alert("Server file tampered! Run 'Audit Case Integrity' to test integrity detection.");
-        await fetchCaseDetails(selectedCaseId);
+      
+      // Translate logs
+      if (activeCase.logs) {
+        activeCase.logs.forEach((log: any) => {
+          getTranslation(log.action_type, `log_action_${log.id}`);
+          getTranslation(log.actor, `log_actor_${log.id}`);
+          if (log.details) getTranslation(log.details, `log_details_${log.id}`);
+        });
       }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleTamperDBHash = async (evidenceId: string) => {
-    if (!selectedCaseId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/simulate/tamper-db-hash`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ evidence_id: evidenceId })
+      
+      // Translate entities
+      aiEntities.forEach(ent => {
+        getTranslation(ent.entity_type, `ent_type_${ent.id}`);
+        getTranslation(ent.entity_value, `ent_val_${ent.id}`);
+        if (ent.context_snippet) getTranslation(ent.context_snippet, `ent_ctx_${ent.id}`);
       });
-      const json = await res.json();
-      if (json.success) {
-        alert("Database evidence hash altered! Run 'Audit Case Integrity' to evaluate integrity validation.");
-        await fetchCaseDetails(selectedCaseId);
+      
+      // Translate evidence
+      if (activeCase.evidence) {
+        activeCase.evidence.forEach((ev: any) => {
+          getTranslation(ev.original_filename, `ev_name_${ev.id}`);
+        });
       }
-    } catch (err) {
-      console.error(err);
     }
+  }, [lang, activeCase, aiSummary, aiTimeline, aiEntities]);
+
+  const getLangClass = () => {
+    if (lang === 'hi') return 'lang-hi';
+    if (lang === 'te') return 'lang-te';
+    return '';
   };
 
-  const handleTamperLogChain = async (logId: string) => {
-    if (!selectedCaseId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/simulate/tamper-log-chain`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ case_id: selectedCaseId, log_id: logId })
-      });
-      const json = await res.json();
-      if (json.success) {
-        alert("Historical log block modified! The log hash chain is now broken. Execute audit to verify.");
-        await fetchCaseDetails(selectedCaseId);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleRestoreOriginals = async () => {
-    if (!selectedCaseId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/simulate/restore`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ case_id: selectedCaseId })
-      });
-      const json = await res.json();
-      if (json.success) {
-        alert("Pristine backups restored, hashes recalculated, and log chain reconstructed.");
-        await fetchCaseDetails(selectedCaseId);
-        if (hasAudited) {
-          handleAuditCase();
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleSeedDemoCase = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/simulate/seed-demo`, { method: "POST" });
-      const json = await res.json();
-      if (json.success) {
-        await fetchCases();
-        setSelectedCaseId(json.case_id);
-        alert(lang === "hi" ? "डेमो केस सफलतापूर्वक लोड किया गया!" : lang === "te" ? "డెమో కేసు విజయవంతంగా లోడ్ చేయబడింది!" : "Demo investigation case seeded successfully!");
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert("Seeding failed: " + err.message);
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedHash(text);
-    setTimeout(() => setCopiedHash(null), 2000);
-  };
-
-  const filteredCases = cases.filter(
-    (c) =>
-      c.title.toLowerCase().includes(sidebarSearch.toLowerCase()) ||
-      c.reference_id.toLowerCase().includes(sidebarSearch.toLowerCase())
+  const pad = (n: number) => String(n).padStart(2, '0');
+  
+  const filteredCases = cases.filter(c => 
+    c.title.toLowerCase().includes(caseSearch.toLowerCase()) || 
+    c.reference_id.toLowerCase().includes(caseSearch.toLowerCase())
   );
 
-  const decoratedEvidence = caseDetails?.evidence.map((ev) => {
-    if (hasAudited && auditResult) {
-      const match = auditResult.evidence_status.find((s) => s.id === ev.id);
-      return match ? { ...ev, status: match.status, recalculated_hash: match.recalculated_hash } : ev;
-    }
-    return ev;
-  }) || [];
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
 
-  const getFileIcon = (mime: string) => {
-    if (mime.startsWith("image/")) return <ImageIcon className="w-4 h-4" />;
-    if (mime.startsWith("video/")) return <Film className="w-4 h-4" />;
-    if (mime.includes("pdf")) return <FileText className="w-4 h-4" />;
-    if (mime.includes("javascript") || mime.includes("json") || mime.includes("html") || mime.includes("css")) {
-      return <FileCode className="w-4 h-4" />;
-    }
-    return <File className="w-4 h-4" />;
-  };
-
-  const getStatusText = (status: "VERIFIED" | "TAMPERED" | "MISSING" | undefined) => {
-    if (!status) return "Unverified";
-    if (status === "VERIFIED") return t("verified_secure");
-    if (status === "TAMPERED") return t("tamper_detected");
-    return "Missing File";
-  };
 
   return (
-    <div className="flex h-screen bg-[#000000] text-slate-200 font-sans overflow-hidden relative selection:bg-neutral-800 selection:text-white">
-      {/* 3D PROJECTED PARALLAX CANVAS */}
-      <InteractiveMeshCanvas
-        mode={canvasMode}
-        evidence={caseDetails?.evidence || []}
-        caseTitle={caseDetails?.title || null}
-        hasAudited={hasAudited}
-        auditResult={auditResult}
-      />
-
-      {/* AESTHETIC FINE OVERLAY GRID LINES */}
-      <div className="absolute inset-0 pointer-events-none z-10 border border-neutral-900/60 m-4 flex flex-col justify-between">
-        <div className="flex justify-between p-4 text-[9px] font-mono tracking-widest text-neutral-500 uppercase">
-          <div>TRACE // FORENSIC CUSTODY PLATFORM</div>
-          <div className="flex space-x-6">
-            <span>UPTIME // 100%</span>
-            <span>AI: {aiProvider.toUpperCase()}</span>
-          </div>
-        </div>
-        <div className="flex justify-between p-4 text-[9px] font-mono tracking-widest text-neutral-500">
-          <div className="flex items-center space-x-2">
-            <span>SYSTEM NODE READY // CUSTODY LEVEL: ACTIVE</span>
-          </div>
-          <div>{timeStr} // UTC+5:30</div>
-        </div>
+    <div className={`min-h-screen bg-brand-black text-brand-white ${getLangClass()}`}>
+      
+      {/* 3D Background Layer */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-40">
+        <Canvas eventSource={document.body} camera={{ position: [0, 0, 5], fov: 75 }}>
+          <color attach="background" args={['#050505']} />
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[10, 10, 10]} intensity={1} />
+          
+          <Suspense fallback={null}>
+            <BackgroundShader />
+            <ParticleSystem count={1500} />
+          </Suspense>
+        </Canvas>
       </div>
 
-      {/* CORE WRAPPER CONTROLS */}
-      {/* SIDEBAR NAVIGATION PANEL */}
-      <aside className="w-80 border-r border-neutral-900 bg-black/60 backdrop-blur-md flex flex-col z-20 relative m-4 mr-0 rounded-l-xl">
-        <div className="p-5 border-b border-neutral-900">
-          <div className="flex items-center space-x-3 mb-2">
-            <Shield className="w-5 h-5 text-neutral-400" />
-            <div>
-              <h1 className="text-md font-bold tracking-wider font-mono text-white">{t("app_title")}</h1>
-              <p className="text-[8px] text-neutral-500 uppercase tracking-widest font-bold font-mono">
-                {t("forensic_custody_engine")}
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* Main Content Container (relative overlay) */}
+      <div className="relative z-10 w-full h-full min-h-screen overflow-hidden flex flex-col">
+        {/* Noise texture overlay for premium feel */}
+        <div className="noise-overlay" />
+        
+        {/* Background grid */}
+        <div className="fixed inset-0 grid-bg pointer-events-none" />
 
-        {/* INVESTIGATOR IDENTITY CONTROL */}
-        <div className="px-5 py-3 border-b border-neutral-900 bg-neutral-950/40">
-          <label className="text-[8px] uppercase tracking-widest text-neutral-500 font-bold block mb-1">
-            {t("current_investigator")}
-          </label>
-          <div className="flex items-center space-x-2 bg-black/80 px-3 py-1.5 rounded border border-neutral-900 focus-within:border-neutral-700 transition-all">
-            <User className="w-3 h-3 text-neutral-500" />
-            <input
-              type="text"
-              value={investigatorName}
-              onChange={(e) => setInvestigatorName(e.target.value)}
-              className="bg-transparent text-xs text-neutral-300 focus:outline-none w-full font-mono"
-            />
-          </div>
-        </div>
+        {/* ═══ LANDING PAGE OVERLAY ═══ */}
+        {!hasEnteredApp && <LandingPage onEnter={() => setHasEnteredApp(true)} />}
 
-        {/* SEARCH BAR */}
-        <div className="p-3 border-b border-neutral-900">
-          <div className="relative">
-            <Search className="absolute left-3 top-2 w-3.5 h-3.5 text-neutral-500" />
-            <input
-              type="text"
-              placeholder={t("search_cases")}
-              value={sidebarSearch}
-              onChange={(e) => setSidebarSearch(e.target.value)}
-              className="w-full bg-black/80 border border-neutral-900 rounded pl-8 pr-3 py-1.5 text-xs text-neutral-300 focus:outline-none focus:border-neutral-700 font-mono placeholder:text-neutral-700"
-            />
-          </div>
-        </div>
-
-        {/* CASES TREE VIEW LIST */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
-          {filteredCases.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setSelectedCaseId(c.id)}
-              className={`w-full text-left p-3 rounded transition-all relative group overflow-hidden border ${
-                selectedCaseId === c.id
-                  ? "bg-neutral-950 border-neutral-700 text-white"
-                  : "bg-transparent border-transparent text-neutral-450 hover:bg-neutral-950/50 hover:text-white"
-              }`}
+      {/* ═══ HEADER ═══ */}
+      <header className={`fixed top-0 left-0 right-0 z-50 glass-strong transition-all duration-500 ${mounted ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'}`}>
+        <div className="flex items-center justify-between px-6 py-3">
+          {/* Logo */}
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="lg:hidden p-2 rounded-lg hover:bg-brand-white/5 transition-colors"
             >
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-[9px] font-mono text-neutral-400 bg-neutral-900 px-1.5 py-0.5 rounded border border-neutral-850">
-                  {c.reference_id}
-                </span>
-                <span className="text-[8px] text-neutral-600 font-mono">
-                  {formatDate(c.created_at, lang).split(",")[0]}
-                </span>
+              <Layers className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2.5">
+              <div className="relative">
+                <Shield className="text-brand-blue w-5 h-5" />
+                <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-brand-green rounded-full animate-pulse" />
               </div>
-              <h3 className="text-xs font-semibold font-mono truncate">{c.title}</h3>
-              <p className="text-[9px] text-neutral-500 truncate mt-0.5 font-mono">{c.description || "No abstract"}</p>
-            </button>
-          ))}
-          {filteredCases.length === 0 && (
-            <div className="text-center py-12">
-              <Folder className="w-6 h-6 text-neutral-800 mx-auto mb-2 opacity-50" />
-              <p className="text-xs text-neutral-600 font-mono">{t("no_cases_found")}</p>
+              <span className="font-syne font-extrabold text-xl tracking-tight text-brand-white">
+                {t.brand}
+              </span>
             </div>
-          )}
-        </div>
-
-        {/* SIDEBAR SETTINGS FOOTER */}
-        <div className="p-4 border-t border-neutral-900 bg-black/80 space-y-2">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="flex-1 bg-neutral-950 hover:bg-neutral-900 border border-neutral-850 text-neutral-300 font-mono py-1.5 px-3 rounded flex items-center justify-center space-x-1.5 text-[10px] cursor-pointer"
-            >
-              <Settings className="w-3 h-3 text-neutral-400" />
-              <span>{t("settings_title")}</span>
-            </button>
-            <button
-              onClick={handleSeedDemoCase}
-              className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-850 text-neutral-400 font-mono p-1.5 rounded flex items-center justify-center cursor-pointer"
-              title={t("seed_demo_case")}
-            >
-              <Sparkles className="w-3 h-3" />
-            </button>
+            <div className="hidden md:block h-4 w-px bg-brand-border ml-2" />
+            <span className="hidden md:block text-[10px] text-brand-dim font-mono tracking-wider uppercase">
+              {t.subtitle}
+            </span>
           </div>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="w-full bg-white hover:bg-neutral-200 text-black font-bold font-mono py-2 px-4 rounded text-xs flex items-center justify-center space-x-2 shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t("create_case_file")}</span>
-          </button>
-        </div>
-      </aside>
 
-      {/* MAIN CONTENT DASHBOARD */}
-      <main className="flex-1 flex flex-col z-20 relative m-4 ml-2 bg-black/40 backdrop-blur-md border border-neutral-900 rounded-r-xl overflow-hidden">
-        {selectedCaseId && caseDetails ? (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* CASE HEADER CONTROL BANNER */}
-            <div className="p-6 border-b border-neutral-900 bg-black/60 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <div className="flex items-center space-x-3 mb-1">
-                  <span className="text-[10px] font-mono text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
-                    {caseDetails.reference_id}
-                  </span>
-                  <span className="text-[10px] text-neutral-500 font-mono">
-                    {t("created_by")}: {caseDetails.created_by}
-                  </span>
-                </div>
-                <h2 className="text-xl font-bold font-mono text-white">{caseDetails.title}</h2>
-                <p className="text-xs text-neutral-400 font-mono max-w-2xl mt-1 leading-relaxed">
-                  {caseDetails.description || "No abstract detailed."}
-                </p>
-              </div>
-
-              {/* ACTION TOGGLES */}
-              <div className="flex flex-wrap gap-2 items-center">
-                <button
-                  onClick={() => setShowSimulationPanel(!showSimulationPanel)}
-                  className={`px-3 py-1.5 rounded border font-mono text-[10px] flex items-center space-x-1.5 transition-all cursor-pointer ${
-                    showSimulationPanel
-                      ? "bg-red-950/40 border-red-700 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.15)]"
-                      : "bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-red-950/60 hover:text-red-400"
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>{t("tamper_simulation")}</span>
-                </button>
-
-                <button
-                  onClick={handleAuditCase}
-                  disabled={isAuditLoading}
-                  className="px-4 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-750 text-white font-mono text-[10px] font-bold rounded flex items-center space-x-1.5 cursor-pointer shadow-sm disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isAuditLoading ? "animate-spin" : ""}`} />
-                  <span>{isAuditLoading ? t("verifying") : t("audit_case_integrity")}</span>
-                </button>
-
-                <a
-                  href={`${API_BASE}/api/cases/${selectedCaseId}/report`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 bg-neutral-950 hover:bg-neutral-900 border border-neutral-850 text-neutral-300 font-mono text-[10px] rounded flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>{t("export_report")}</span>
-                </a>
-
-                <a
-                  href={`${API_BASE}/api/cases/${selectedCaseId}/export`}
-                  className="px-3 py-1.5 bg-neutral-950 hover:bg-neutral-900 border border-neutral-850 text-neutral-300 font-mono text-[10px] rounded flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>{t("download_archive")}</span>
-                </a>
-              </div>
+          {/* Right controls */}
+          <div className="flex items-center gap-3">
+            {/* Clock */}
+            <div className="hidden sm:flex items-center gap-2 text-[10px] font-mono text-brand-dim">
+              <Clock className="w-3 h-3 text-brand-blue" />
+              <span>{pad(currentTime.getUTCHours())}<span className="animate-blink">:</span>{pad(currentTime.getUTCMinutes())} {t.utcClock}</span>
+              <span className="text-brand-muted">|</span>
+              <span className="text-brand-blue font-semibold">{pad(currentTime.getHours())}:{pad(currentTime.getMinutes())} {t.localClock}</span>
             </div>
+            
+            <div className="h-4 w-px bg-brand-border" />
 
-            {/* INTEGRITY AUDIT NOTIFICATION BAR */}
-            {hasAudited && auditResult && (
-              <div
-                className={`mx-6 mt-4 p-4 border rounded font-mono ${
-                  auditResult.chain_integrity
-                    ? "bg-emerald-950/20 border-emerald-900 text-emerald-400"
-                    : "bg-red-950/20 border-red-900 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.06)]"
-                }`}
+            {/* Language picker — custom dropdown for proper font rendering */}
+            <div className="relative">
+              <button
+                onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-white/[0.03] border border-brand-border hover:border-brand-border-active transition-all cursor-pointer"
               >
-                <div className="flex items-start space-x-3">
-                  {auditResult.chain_integrity ? (
-                    <ShieldCheck className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
-                  ) : (
-                    <AlertOctagon className="w-5 h-5 text-red-500 mt-0.5 shrink-0 animate-pulse" />
-                  )}
-                  <div className="flex-1">
-                    <h4 className="text-xs font-bold uppercase tracking-wider">
-                      {auditResult.chain_integrity ? t("verification_passed_title") : t("verification_failed_title")}
-                    </h4>
-                    <p className="text-[10px] opacity-80 mt-1 leading-relaxed">
-                      {auditResult.chain_integrity ? t("verification_passed_desc") : t("verification_failed_desc")}
-                    </p>
+                <Globe className="w-3 h-3 text-brand-blue" />
+                <span className="text-[10px] font-bold text-brand-white" style={{ fontFamily: lang === 'hi' ? '"Noto Sans Devanagari", sans-serif' : lang === 'te' ? '"Noto Sans Telugu", sans-serif' : '"Inter", sans-serif' }}>
+                  {lang === 'en' ? 'EN' : lang === 'hi' ? 'हिंदी' : 'తెలుగు'}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-brand-dim transition-transform ${langDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {langDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setLangDropdownOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 z-50 w-36 rounded-xl border border-brand-border bg-brand-surface shadow-2xl overflow-hidden animate-slide-down">
+                    {[
+                      { code: 'en' as const, label: 'English', native: 'EN', font: '"Inter", sans-serif' },
+                      { code: 'hi' as const, label: 'Hindi', native: 'हिंदी', font: '"Noto Sans Devanagari", sans-serif' },
+                      { code: 'te' as const, label: 'Telugu', native: 'తెలుగు', font: '"Noto Sans Telugu", sans-serif' },
+                    ].map(opt => (
+                      <button
+                        key={opt.code}
+                        onClick={() => { setLang(opt.code); setLangDropdownOpen(false); }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-all cursor-pointer
+                          ${lang === opt.code ? 'bg-brand-blue/10 text-brand-blue' : 'text-brand-white hover:bg-brand-white/[0.05]'}
+                        `}
+                      >
+                        <span className="text-[11px] font-medium">{opt.label}</span>
+                        <span className="text-[11px] font-bold" style={{ fontFamily: opt.font }}>{opt.native}</span>
+                      </button>
+                    ))}
                   </div>
-                  {showSimulationPanel && !auditResult.chain_integrity && (
-                    <button
-                      onClick={handleRestoreOriginals}
-                      className="px-3 py-1 bg-red-900/40 hover:bg-red-900 border border-red-750 text-red-100 text-[10px] font-bold rounded cursor-pointer"
-                    >
-                      {t("restore_originals")}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* TAB CONTAINER VIEWPORT */}
-            <div className="px-6 border-b border-neutral-900 bg-black/40 flex justify-between items-center">
-              <div className="flex space-x-1 mt-2">
-                <button
-                  onClick={() => setActiveTab("catalog")}
-                  className={`px-4 py-2 text-[10px] font-bold font-mono tracking-wider transition-all border-b-2 cursor-pointer ${
-                    activeTab === "catalog"
-                      ? "border-white text-white bg-neutral-950/20"
-                      : "border-transparent text-neutral-550 hover:text-neutral-350"
-                  }`}
-                >
-                  [ 01 // {t("evidence_catalog")} ]
-                </button>
-                <button
-                  onClick={() => setActiveTab("timeline")}
-                  className={`px-4 py-2 text-[10px] font-bold font-mono tracking-wider transition-all border-b-2 cursor-pointer ${
-                    activeTab === "timeline"
-                      ? "border-white text-white bg-neutral-950/20"
-                      : "border-transparent text-neutral-550 hover:text-neutral-350"
-                  }`}
-                >
-                  [ 02 // {t("audit_timeline")} ]
-                </button>
-                <button
-                  onClick={() => setActiveTab("ai_hub")}
-                  className={`px-4 py-2 text-[10px] font-bold font-mono tracking-wider transition-all border-b-2 cursor-pointer ${
-                    activeTab === "ai_hub"
-                      ? "border-white text-white bg-neutral-950/20"
-                      : "border-transparent text-neutral-550 hover:text-neutral-350"
-                  }`}
-                >
-                  [ 03 // {t("ai_insights_tab")} ]
-                </button>
-              </div>
-
-              {/* SIMULATION RESTORE SHORTCUT */}
-              {showSimulationPanel && (
-                <button
-                  onClick={handleRestoreOriginals}
-                  className="mb-1 text-[9px] text-red-450 hover:text-red-400 font-bold font-mono border border-red-900/50 bg-red-950/10 px-2 py-0.5 rounded flex items-center space-x-1 cursor-pointer"
-                >
-                  <RefreshCw className="w-2.5 h-2.5" />
-                  <span>{t("restore_originals")}</span>
-                </button>
+                </>
               )}
             </div>
 
-            {/* TAB CONTAINER WORKSPACE */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* TAB 01: EVIDENCE DATABASE CATALOG */}
-              {activeTab === "catalog" && (
-                <div className="space-y-6">
-                  {/* DRAG AND DROP ZONE */}
-                  <div
-                    onDragEnter={handleDrag}
-                    onDragOver={handleDrag}
-                    onDragLeave={handleDrag}
-                    onDrop={handleDrop}
-                    className={`border border-dashed rounded-lg p-8 text-center transition-all ${
-                      dragActive
-                        ? "border-white bg-neutral-950 text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"
-                        : "border-neutral-900 bg-neutral-950/40 text-neutral-500 hover:border-neutral-800"
+            {/* Settings toggle */}
+            <button 
+              onClick={() => setShowSettingsModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-white/[0.03] border border-brand-border hover:border-brand-border-active transition-all cursor-pointer"
+              title="AI Settings & BYOK"
+            >
+              <Settings className="w-3 h-3 text-brand-dim hover:text-brand-white" />
+            </button>
+
+            {/* Game toggle */}
+            <button 
+              onClick={() => { setGameMode(!gameMode); if (!gameMode) setGameState('idle'); }}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${gameMode ? 'bg-brand-blue/10 text-brand-blue border border-brand-blue/30' : 'bg-brand-white/[0.03] text-brand-dim border border-brand-border hover:text-brand-white hover:border-brand-border-active'}`}
+            >
+              <Zap className="w-3 h-3" />
+              <span className="hidden sm:inline">{t.game}</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ═══ GAME OVERLAY ═══ */}
+      {gameMode && (
+        <div className={`fixed inset-0 z-40 flex items-center justify-center transition-all duration-300 ${gameFlashColor ? 'bg-green-500/90' : 'bg-brand-black/95 backdrop-blur-xl'}`}>
+          <div className="text-center animate-scale-in max-w-lg px-6">
+            <Zap className={`w-12 h-12 mx-auto mb-4 ${gameFlashColor ? 'text-black' : 'text-brand-blue animate-float'}`} />
+            <h2 className="font-syne font-extrabold text-2xl mb-2">{t.gameTitle}</h2>
+            <p className={`text-xs mb-8 ${gameFlashColor ? 'text-black/70' : 'text-brand-dim'}`}>{t.gameIntro}</p>
+            
+            <div 
+              onClick={handleGameTrigger}
+              className={`w-full max-w-sm mx-auto h-40 rounded-2xl flex items-center justify-center cursor-pointer select-none transition-all duration-300
+                ${gameState === 'waiting' ? 'border-2 border-yellow-500/50 bg-yellow-500/5' : 
+                  gameState === 'flash' ? 'border-2 border-green-400 bg-green-400/20 animate-pulse scale-105' : 
+                  'border border-brand-border hover:border-brand-blue/50 bg-brand-white/[0.03] hover:bg-brand-white/[0.05]'}
+              `}
+            >
+              <span className={`font-syne font-extrabold text-lg tracking-wider ${gameFlashColor ? 'text-black' : ''}`}>
+                {gameState === 'idle' && "TAP TO START"}
+                {gameState === 'waiting' && t.gameWait}
+                {gameState === 'flash' && t.gameClick}
+                {gameState === 'result' && (
+                  gameResultTime === -1 ? t.gameTooEarly : `${t.gameResult}: ${gameResultTime}ms`
+                )}
+              </span>
+            </div>
+
+            <button 
+              onClick={() => { setGameMode(false); setGameState('idle'); setGameFlashColor(false); }}
+              className="mt-6 text-[10px] font-mono text-brand-dim hover:text-brand-white transition-colors cursor-pointer"
+            >
+              ← EXIT GAME
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MAIN LAYOUT ═══ */}
+      <div className="flex pt-[52px] min-h-screen relative">
+        
+        {/* ─── SIDEBAR ─── */}
+        <aside className={`fixed lg:sticky top-[52px] left-0 h-[calc(100vh-52px)] w-72 bg-brand-surface/80 backdrop-blur-xl border-r border-brand-border flex flex-col z-30 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+          
+          {/* Sidebar header */}
+          <div className="p-4 border-b border-brand-border">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-syne font-bold text-xs tracking-[0.2em] text-brand-dim uppercase flex items-center gap-2">
+                <Folder className="w-3.5 h-3.5 text-brand-blue" />
+                {t.casesTitle}
+              </h2>
+              <button 
+                onClick={() => setShowCreateModal(true)}
+                className="btn-primary flex items-center gap-1 bg-brand-blue/10 text-brand-blue border border-brand-blue/20 rounded-lg px-2.5 py-1.5 text-[10px] font-bold font-mono uppercase cursor-pointer hover:bg-brand-blue/20"
+              >
+                <Plus className="w-3 h-3" />
+                {t.newCase}
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-dim" />
+              <input 
+                type="text" 
+                placeholder={t.searchPlaceholder}
+                value={caseSearch}
+                onChange={(e) => setCaseSearch(e.target.value)}
+                className="w-full bg-brand-white/[0.03] border border-brand-border rounded-lg pl-8 pr-3 py-2 text-xs text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Cases list */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+            {filteredCases.length === 0 ? (
+              <div className="text-center py-12 text-brand-dim text-xs font-mono animate-fade-in">
+                <Folder className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                <p>No cases found</p>
+              </div>
+            ) : (
+              filteredCases.map((c, idx) => (
+                <div 
+                  key={c.id}
+                  onClick={() => { setActiveCaseId(c.id); setSidebarOpen(false); }}
+                  className={`group p-3 rounded-xl cursor-pointer transition-all duration-200 animate-fade-in-left
+                    ${activeCaseId === c.id 
+                      ? 'bg-brand-blue/[0.08] border border-brand-blue/20 shadow-[0_0_20px_rgba(48,184,255,0.05)]' 
+                      : 'border border-transparent hover:bg-brand-white/[0.03] hover:border-brand-border'
                     }`}
-                  >
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                    <Upload className="w-8 h-8 mx-auto mb-3 opacity-60" />
-                    <p className="text-xs font-semibold font-mono text-neutral-300">{t("drag_drop_zone")}</p>
-                    <p className="text-[9px] text-neutral-600 max-w-md mx-auto mt-1 leading-relaxed font-mono">
-                      {t("drag_drop_sub")}
-                    </p>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploading}
-                      className="mt-4 px-4 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-750 text-white font-mono text-[10px] rounded cursor-pointer disabled:opacity-50"
-                    >
-                      {isUploading ? t("uploading") : t("select_file")}
-                    </button>
+                  style={{ animationDelay: `${idx * 0.05}s` }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        {activeCaseId === c.id && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-brand-blue flex-shrink-0" />
+                        )}
+                        <span className="font-inter font-semibold text-xs text-brand-white truncate">
+                          {c.title}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-mono text-brand-dim">
+                        <Hash className="w-2.5 h-2.5" />
+                        <span>{c.reference_id}</span>
+                      </div>
+                    </div>
+                    <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 transition-all ${activeCaseId === c.id ? 'text-brand-blue' : 'text-brand-muted group-hover:text-brand-dim'}`} />
                   </div>
+                </div>
+              ))
+            )}
+          </div>
 
-                  {/* EVIDENCE ENTRIES TABLE */}
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-neutral-450 font-mono">
-                      {t("secure_evidence_records")}
-                    </h3>
-                    <div className="border border-neutral-900 rounded-lg overflow-hidden bg-black/60">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-neutral-900 bg-neutral-950/40 text-[9px] font-mono tracking-widest text-neutral-500 uppercase">
-                            <th className="p-3 pl-4">Filename</th>
-                            <th className="p-3">Audit SHA-256 Hash</th>
-                            <th className="p-3">File Size</th>
-                            <th className="p-3">Custody Event</th>
-                            <th className="p-3 pr-4 text-right">Integrity Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-neutral-900 text-xs font-mono">
-                          {decoratedEvidence.map((ev) => (
-                            <tr key={ev.id} className="hover:bg-neutral-950/30 group">
-                              {/* File name & info */}
-                              <td className="p-3 pl-4">
-                                <div className="flex items-center space-x-2.5">
-                                  <div className="text-neutral-500 shrink-0">
-                                    {getFileIcon(ev.mime_type)}
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-neutral-200 group-hover:text-white truncate max-w-[180px]" title={ev.original_filename}>
-                                      {ev.original_filename}
-                                    </div>
-                                    <div className="text-[9px] text-neutral-600 mt-0.5">
-                                      {ev.mime_type}
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
+          {/* Sidebar footer stats */}
+          <div className="p-4 border-t border-brand-border text-[10px] font-mono text-brand-dim space-y-1">
+            <div className="flex items-center justify-between">
+              <span>{cases.length} {t.caseCount}</span>
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
+                <span>ONLINE</span>
+              </div>
+            </div>
+          </div>
+        </aside>
 
-                              {/* Cryptographic SHA-256 Hash */}
-                              <td className="p-3">
-                                <div className="flex items-center space-x-2">
-                                  <span className="text-[10px] text-neutral-500 font-mono font-semibold">
-                                    {ev.sha256_hash.substring(0, 16)}...
-                                  </span>
-                                  <button
-                                    onClick={() => copyToClipboard(ev.sha256_hash)}
-                                    className="text-neutral-700 hover:text-neutral-450 shrink-0 cursor-pointer"
-                                    title="Copy SHA-256 Hash"
-                                  >
-                                    {copiedHash === ev.sha256_hash ? (
-                                      <Check className="w-3 h-3 text-emerald-500" />
-                                    ) : (
-                                      <Copy className="w-3 h-3" />
-                                    )}
-                                  </button>
-                                </div>
-                                {ev.recalculated_hash && ev.recalculated_hash !== ev.sha256_hash && (
-                                  <div className="text-[9px] text-red-500 mt-1 font-semibold">
-                                    {t("recalculated_hash")} {ev.recalculated_hash.substring(0, 12)}...
-                                  </div>
-                                )}
-                              </td>
+        {/* Sidebar backdrop on mobile */}
+        {sidebarOpen && (
+          <div 
+            className="lg:hidden fixed inset-0 bg-black/50 z-20"
+            onClick={() => setSidebarOpen(false)} 
+          />
+        )}
 
-                              {/* Size */}
-                              <td className="p-3 text-neutral-400">
-                                {formatBytes(ev.file_size_bytes, lang)}
-                              </td>
-
-                              {/* Upload timestamp & uploader */}
-                              <td className="p-3">
-                                <div className="text-neutral-400">{ev.uploaded_by}</div>
-                                <div className="text-[9px] text-neutral-600 mt-0.5">
-                                  {formatDate(ev.uploaded_at, lang)}
-                                </div>
-                              </td>
-
-                              {/* Action Options (Tamper & Transfer buttons) */}
-                              <td className="p-3 pr-4 text-right">
-                                <div className="flex items-center justify-end space-x-2.5">
-                                  {/* Tampering Options for testing */}
-                                  {showSimulationPanel && (
-                                    <div className="flex items-center space-x-1 animate-fadeIn">
-                                      <button
-                                        onClick={() => handleTamperFile(ev.id)}
-                                        className="bg-red-950/20 hover:bg-red-950/50 border border-red-900/60 text-red-400 text-[8px] px-1.5 py-0.5 rounded cursor-pointer"
-                                        title={t("tamper_disk_file")}
-                                      >
-                                        Disk Corrupt
-                                      </button>
-                                      <button
-                                        onClick={() => handleTamperDBHash(ev.id)}
-                                        className="bg-red-950/20 hover:bg-red-950/50 border border-red-900/60 text-red-400 text-[8px] px-1.5 py-0.5 rounded cursor-pointer"
-                                        title={t("tamper_db_hash")}
-                                      >
-                                        DB Hash
-                                      </button>
-                                    </div>
-                                  )}
-
-                                  {/* Custom status badge */}
-                                  <span
-                                    className={`px-2 py-0.5 rounded text-[8px] font-bold border ${
-                                      !ev.status
-                                        ? "bg-neutral-900 border-neutral-800 text-neutral-450"
-                                        : ev.status === "VERIFIED"
-                                        ? "bg-emerald-950/10 border-emerald-900/40 text-emerald-450"
-                                        : "bg-red-950/10 border-red-900/40 text-red-400 shadow-[0_0_8px_rgba(239,68,68,0.1)]"
-                                    }`}
-                                  >
-                                    {getStatusText(ev.status)}
-                                  </span>
-
-                                  {/* Transfer button */}
-                                  <button
-                                    onClick={() => {
-                                      setTransferTargetEvidence(ev);
-                                      setIsTransferModalOpen(true);
-                                    }}
-                                    className="p-1 bg-neutral-950 hover:bg-neutral-900 border border-neutral-850 hover:border-neutral-700 text-neutral-400 hover:text-white rounded cursor-pointer"
-                                    title={t("transfer_custody")}
-                                  >
-                                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                          {decoratedEvidence.length === 0 && (
-                            <tr>
-                              <td colSpan={5} className="text-center py-12 text-neutral-600">
-                                <Database className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                                <div className="font-bold">{t("empty_evidence_room")}</div>
-                                <div className="text-[10px] mt-0.5">{t("empty_evidence_desc")}</div>
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+        {/* ─── MAIN CONTENT ─── */}
+        <main className="flex-1 min-h-[calc(100vh-52px)] relative">
+          {activeCase ? (
+            <div className="animate-fade-in">
+              
+              {/* Case Header Banner */}
+              <div className="px-6 lg:px-10 py-8 border-b border-brand-border bg-gradient-to-b from-brand-blue/[0.03] to-transparent">
+                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 animate-fade-in-up">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 rounded-xl bg-brand-blue/10 border border-brand-blue/20">
+                        <Shield className="w-5 h-5 text-brand-blue" />
+                      </div>
+                      <div>
+                        <h1 className="font-syne font-extrabold text-2xl lg:text-3xl tracking-tight text-brand-white">
+                          {lang === 'en' ? activeCase.title : (translatedContent[`${lang}_case_title_${activeCase.id}`] || activeCase.title)}
+                        </h1>
+                        {activeCase.description && (
+                          <p className="text-xs text-brand-dim mt-1 max-w-xl leading-relaxed">
+                            {lang === 'en' ? activeCase.description : (translatedContent[`${lang}_case_desc_${activeCase.id}`] || activeCase.description)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Metadata chips */}
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {[
+                        { icon: <Hash className="w-3 h-3" />, label: activeCase.reference_id },
+                        { icon: <User className="w-3 h-3" />, label: activeCase.created_by },
+                        { icon: <Clock className="w-3 h-3" />, label: new Date(activeCase.created_at).toLocaleDateString() },
+                      ].map((chip, i) => (
+                        <span key={i} className="tag inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand-white/[0.03] border border-brand-border text-[10px] font-mono text-brand-dim">
+                          {chip.icon}
+                          {chip.label}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* TAB 02: CRYPTOGRAPHIC LOG TIMELINE */}
-              {activeTab === "timeline" && (
-                <div className="space-y-6 max-w-4xl mx-auto">
-                  <div className="p-4 border border-neutral-900 bg-neutral-950/30 rounded-lg text-neutral-400 font-mono text-xs leading-relaxed">
-                    <p className="font-semibold text-neutral-200 mb-1">
-                      [CRYPTOGRAPHIC AUDIT LEDGER]
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap gap-2 animate-fade-in-up delay-2">
+                    <button 
+                      onClick={handleAuditCase}
+                      disabled={auditLoading}
+                      className="btn-primary flex items-center gap-2 px-4 py-2.5 bg-brand-blue text-brand-black rounded-xl text-[11px] font-bold font-mono uppercase cursor-pointer disabled:opacity-50 hover:shadow-[0_0_25px_rgba(48,184,255,0.3)]"
+                    >
+                      <Fingerprint className={`w-3.5 h-3.5 ${auditLoading ? 'animate-spin' : ''}`} />
+                      {t.auditIntegrity}
+                    </button>
+                    <a 
+                      href={`${API_BASE}/cases/${activeCase.id}/report`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-primary flex items-center gap-2 px-4 py-2.5 bg-brand-white/[0.05] border border-brand-border text-brand-white rounded-xl text-[11px] font-bold font-mono uppercase hover:border-brand-blue/50 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {t.exportReport}
+                    </a>
+                    <a 
+                      href={`${API_BASE}/cases/${activeCase.id}/bundle`}
+                      className="btn-primary flex items-center gap-2 px-4 py-2.5 bg-brand-white/[0.05] border border-brand-border text-brand-white rounded-xl text-[11px] font-bold font-mono uppercase hover:border-brand-blue/50 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {t.downloadBundle}
+                    </a>
+                  </div>
+                </div>
+
+                {/* Audit Result Alert */}
+                {auditResult && (
+                  <div className={`mt-6 p-4 rounded-xl border animate-scale-in flex items-center justify-between gap-4
+                    ${auditResult.chainValid && auditResult.allFilesMatch 
+                      ? 'border-brand-green/30 bg-brand-green/[0.05]' 
+                      : 'border-brand-red/30 bg-brand-red/[0.05]'
+                    }`}>
+                    <div className="flex items-center gap-3">
+                      {auditResult.chainValid && auditResult.allFilesMatch ? (
+                        <div className="p-2 rounded-full bg-brand-green/10">
+                          <CheckCircle className="w-5 h-5 text-brand-green" />
+                        </div>
+                      ) : (
+                        <div className="p-2 rounded-full bg-brand-red/10">
+                          <AlertTriangle className="w-5 h-5 text-brand-red" />
+                        </div>
+                      )}
+                      <div>
+                        <div className={`font-bold text-sm ${auditResult.chainValid && auditResult.allFilesMatch ? 'text-brand-green' : 'text-brand-red'}`}>
+                          {auditResult.chainValid ? t.chainIntact : t.chainBroken}
+                        </div>
+                        <div className="text-[10px] text-brand-dim mt-0.5 font-mono">
+                          {auditResult.allFilesMatch ? "All file checksums verified." : "Warning: File integrity check failed."}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="hidden md:flex gap-2 text-[9px] font-mono">
+                      {auditResult.fileAudits?.map((f: any) => (
+                        <span key={f.id} className={`px-2 py-0.5 rounded-md border ${f.status === 'VERIFIED' ? 'border-brand-green/20 text-brand-green bg-brand-green/5' : 'border-brand-red/20 text-brand-red bg-brand-red/5'}`}>
+                          {f.filename}: {f.status}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ─── Content Grid ─── */}
+              <div className="flex flex-col xl:flex-row">
+                
+                {/* Left: Evidence Panel */}
+                <div className="flex-1 px-6 lg:px-10 py-8 border-r border-brand-border">
+                  <h2 className="font-syne font-bold text-xs tracking-[0.15em] text-brand-dim uppercase flex items-center gap-2 mb-6 animate-fade-in-up delay-1">
+                    <FileText className="w-3.5 h-3.5 text-brand-blue" />
+                    {t.evidenceTitle} ({activeCase.evidence?.length || 0})
+                  </h2>
+
+                  {/* Upload dropzone */}
+                  <div 
+                    onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={handleFileDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`group relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-300 mb-6 animate-fade-in-up delay-2
+                      ${isDragOver 
+                        ? 'border-brand-blue bg-brand-blue/[0.05] scale-[1.01]' 
+                        : 'border-brand-border hover:border-brand-blue/30 hover:bg-brand-white/[0.02]'
+                      }
+                      ${uploadLoading ? 'pointer-events-none opacity-50 scanner-effect' : ''}
+                    `}
+                  >
+                    <input 
+                      type="file" 
+                      ref={fileInputRef}
+                      onChange={(e) => e.target.files && uploadFile(e.target.files[0])}
+                      className="hidden" 
+                    />
+                    <Upload className={`w-8 h-8 mx-auto mb-3 transition-all duration-300 ${isDragOver ? 'text-brand-blue scale-110' : 'text-brand-muted group-hover:text-brand-blue'}`} />
+                    <p className="font-inter font-semibold text-sm text-brand-white mb-1">
+                      {uploadLoading ? t.loading : t.dropzoneText}
                     </p>
-                    <p className="text-[10px] leading-relaxed">
-                      {t("linked_chain_desc")}
-                    </p>
+                    <p className="text-[10px] text-brand-dim font-mono">{t.browseFiles}</p>
                   </div>
 
-                  {/* LOG VERTICAL TIMELINE LEDGER */}
-                  <div className="relative border-l border-neutral-900 ml-4 pl-6 space-y-6">
-                    {caseDetails.logs.map((log, index) => {
-                      const isBroken = hasAudited && auditResult && !auditResult.chain_integrity && auditResult.chain_error_at === log.id;
-                      
+                  {/* Evidence items */}
+                  <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                    {activeCase.evidence?.map((ev: any, idx: number) => {
+                      const verifyInfo = fileVerifyStatus[ev.id];
                       return (
-                        <div key={log.id} className="relative">
-                          {/* Left bullet marker node */}
-                          <div
-                            className={`absolute -left-[31px] top-1.5 w-4.5 h-4.5 rounded-full border flex items-center justify-center ${
-                              isBroken
-                                ? "bg-red-950 border-red-650 text-red-400 animate-pulse"
-                                : "bg-black border-neutral-800 text-neutral-500"
-                            }`}
-                          >
-                            <span className="text-[8px] font-bold font-mono">{index}</span>
+                        <div 
+                          key={ev.id} 
+                          className="card-hover border border-brand-border rounded-xl p-4 bg-brand-card/50 animate-fade-in-up"
+                          style={{ animationDelay: `${(idx + 3) * 0.06}s` }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="p-2 rounded-lg bg-brand-blue/5 border border-brand-border flex-shrink-0 mt-0.5">
+                                <FileText className="w-4 h-4 text-brand-blue" />
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-bold text-brand-white truncate block">
+                                  {lang === 'en' ? ev.original_filename : (translatedContent[`${lang}_ev_name_${ev.id}`] || ev.original_filename)}
+                                </span>
+                                <div className="flex items-center gap-2 mt-1 text-[10px] text-brand-dim font-mono">
+                                  <span>{ev.mime_type}</span>
+                                  <span className="text-brand-muted">•</span>
+                                  <span>{(ev.file_size_bytes / 1024).toFixed(1)} KB</span>
+                                  <span className="text-brand-muted">•</span>
+                                  <span>{new Date(ev.uploaded_at).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Verification badge */}
+                            {verifyInfo && (
+                              <span className={`flex-shrink-0 text-[9px] px-2 py-1 rounded-lg font-mono font-bold animate-scale-in
+                                ${verifyInfo.status === 'VERIFIED' ? 'bg-brand-green/10 text-brand-green border border-brand-green/20' : 
+                                  verifyInfo.status === 'TAMPERED' ? 'bg-brand-red/10 text-brand-red border border-brand-red/20' : 
+                                  verifyInfo.status === 'LOADING' ? 'bg-brand-blue/10 text-brand-blue border border-brand-blue/20' :
+                                  'bg-brand-yellow/10 text-brand-yellow border border-brand-yellow/20'}`}>
+                                {verifyInfo.status === 'LOADING' ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : verifyInfo.status}
+                              </span>
+                            )}
                           </div>
 
-                          {/* Block Card */}
-                          <div className={`p-4 border rounded-lg bg-neutral-950/60 font-mono ${
-                            isBroken ? "border-red-900 shadow-[0_0_12px_rgba(239,68,68,0.1)]" : "border-neutral-900"
-                          }`}>
-                            <div className="flex flex-wrap justify-between items-start mb-2 gap-2">
-                              <div>
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
-                                  log.action_type === "CASE_CREATED"
-                                    ? "bg-indigo-950/20 border-indigo-900 text-indigo-400"
-                                    : log.action_type === "EVIDENCE_UPLOADED"
-                                    ? "bg-emerald-950/20 border-emerald-900 text-emerald-450"
-                                    : "bg-amber-950/20 border-amber-900 text-amber-500"
-                                }`}>
-                                  {log.action_type}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-neutral-500">
-                                {formatDate(log.created_at, lang)}
-                              </div>
+                          {/* Hash & actions row */}
+                          <div className="mt-3 pt-3 border-t border-brand-border/50 flex items-center justify-between">
+                            <div className="text-[9px] font-mono text-brand-muted truncate max-w-[250px] flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5 flex-shrink-0" />
+                              <span className="truncate">{ev.sha256_hash}</span>
                             </div>
-
-                            <p className="text-xs text-neutral-300 mb-3 leading-relaxed">
-                              {log.details}
-                            </p>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[9px] text-neutral-500 border-t border-neutral-900/60 pt-2.5">
-                              <div>
-                                <span className="font-bold text-neutral-600 block">{t("actor")}:</span>
-                                <span className="text-neutral-450">{log.actor}</span>
-                              </div>
-                              <div>
-                                <span className="font-bold text-neutral-600 block">{t("prev_block_hash")}:</span>
-                                <span className="text-neutral-500 truncate block hover:text-neutral-350 cursor-pointer" onClick={() => copyToClipboard(log.prev_log_hash)}>
-                                  {log.prev_log_hash.substring(0, 32)}...
-                                </span>
-                              </div>
-                              <div className="md:col-span-2 mt-1">
-                                <span className="font-bold text-neutral-600 block">{t("current_block_hash")}:</span>
-                                <span className={`truncate block font-semibold hover:text-neutral-300 cursor-pointer ${isBroken ? "text-red-400" : "text-neutral-400"}`} onClick={() => copyToClipboard(log.log_hash)}>
-                                  {log.log_hash}
-                                </span>
-                              </div>
+                            
+                            <div className="flex gap-1.5 flex-shrink-0">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleProcessEvidenceAI(ev.id); }}
+                                className="p-1.5 rounded-lg border border-brand-border text-brand-dim hover:text-brand-blue hover:border-brand-blue/30 hover:bg-brand-blue/5 transition-all cursor-pointer"
+                                title="Process with AI"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleVerifyEvidence(ev.id); }}
+                                className="px-2.5 py-1 rounded-lg border border-brand-border text-brand-dim hover:text-brand-blue hover:border-brand-blue/30 hover:bg-brand-blue/5 transition-all cursor-pointer text-[9px] font-mono font-bold"
+                              >
+                                {t.verifyFile}
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setSelectedEvidenceId(ev.id); setShowTransferModal(true); }}
+                                className="px-2.5 py-1 rounded-lg border border-brand-border text-brand-dim hover:text-brand-purple hover:border-brand-purple/30 hover:bg-brand-purple/5 transition-all cursor-pointer text-[9px] font-mono font-bold"
+                              >
+                                {t.transferCustody}
+                              </button>
                             </div>
-
-                            {/* Tamper log simulation panel */}
-                            {showSimulationPanel && (
-                              <div className="mt-3 flex justify-end animate-fadeIn">
-                                <button
-                                  onClick={() => handleTamperLogChain(log.id)}
-                                  className="bg-red-950/20 hover:bg-red-950/50 border border-red-900/50 text-red-400 text-[8px] font-bold px-2 py-0.5 rounded cursor-pointer"
-                                >
-                                  {t("alter_log_details")}
-                                </button>
-                              </div>
-                            )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
-              )}
 
-              {/* TAB 03: COGNITIVE INTELLIGENCE ENGINE (AI FEATURES) */}
-              {activeTab === "ai_hub" && (
-                <div className="space-y-6">
-                  {/* CONFIG AND REBUILD BUTTONS */}
-                  <div className="flex flex-wrap items-center justify-between gap-4 p-4 border border-neutral-900 bg-neutral-950/30 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <Activity className="w-4 h-4 text-indigo-400" />
-                      <span className="text-xs font-bold font-mono uppercase text-neutral-300">
-                        {t("ai_provider_label")}: {aiProvider.toUpperCase()} ({ollamaModel})
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={handleGenerateSummary}
-                        disabled={isAiLoading}
-                        className="px-3 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-750 text-white font-mono text-[9px] font-bold rounded flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                {/* Right: Tabbed Detail Panel */}
+                <div className="w-full xl:w-[480px] flex-shrink-0 px-6 lg:px-8 py-8">
+                  
+                  {/* Tab buttons */}
+                  <div className="flex gap-1 p-1 bg-brand-white/[0.03] rounded-xl border border-brand-border mb-6 animate-fade-in-up delay-3">
+                    {[
+                      { id: 'timeline' as const, label: t.timelineTab, icon: <Activity className="w-3 h-3" /> },
+                      { id: 'ai' as const, label: t.aiAdvisoryTab, icon: <Sparkles className="w-3 h-3" /> },
+                      { id: 'search' as const, label: t.searchTab, icon: <Search className="w-3 h-3" /> },
+                    ].map(tab => (
+                      <button 
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer
+                          ${activeTab === tab.id 
+                            ? 'bg-brand-blue/10 text-brand-blue border border-brand-blue/20 shadow-[0_0_15px_rgba(48,184,255,0.05)]' 
+                            : 'text-brand-dim hover:text-brand-white'
+                          }`}
                       >
-                        <RefreshCw className={`w-3 h-3 ${isAiLoading ? "animate-spin" : ""}`} />
-                        <span>{t("recompile")} summary</span>
+                        {tab.icon}
+                        <span className="hidden sm:inline">{tab.label}</span>
                       </button>
-                      <button
-                        onClick={handleGenerateTimeline}
-                        disabled={isAiLoading}
-                        className="px-3 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-750 text-white font-mono text-[9px] font-bold rounded flex items-center space-x-1 cursor-pointer disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${isAiLoading ? "animate-spin" : ""}`} />
-                        <span>{t("rebuild")} timeline</span>
-                      </button>
-                    </div>
+                    ))}
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* EXECUTIVE ABSTRACT AND ACTORS (2 COLS) */}
-                    <div className="lg:col-span-2 space-y-6">
-                      {/* EXECUTIVE SUMMARY ABSTRACT */}
-                      <div className="border border-neutral-900 rounded-lg p-5 bg-black/60 font-mono">
-                        <div className="flex items-center justify-between mb-4 border-b border-neutral-900 pb-2">
-                          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                            {t("executive_summary")}
-                          </h3>
-                          <Sparkles className="w-3.5 h-3.5 text-indigo-450" />
+                  {/* Tab: Custody Timeline */}
+                  {activeTab === 'timeline' && (
+                    <div className="space-y-1 max-h-[650px] overflow-y-auto pr-1 animate-fade-in">
+                      {activeCase.logs?.length === 0 ? (
+                        <div className="text-center py-16 text-brand-dim animate-fade-in">
+                          <Activity className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                          <p className="text-xs font-mono">No custody events yet.</p>
                         </div>
-                        {isAiLoading && !aiInsights.summary ? (
-                          <div className="py-12 text-center text-neutral-600 text-xs">
-                            <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin" />
-                            <span>{t("analyzing")}</span>
-                          </div>
-                        ) : aiInsights.summary ? (
-                          <div className="text-xs leading-relaxed text-neutral-300 whitespace-pre-wrap">
-                            {aiInsights.summary.executive_summary}
-                          </div>
-                        ) : (
-                          <div className="py-8 text-center text-neutral-600 text-xs">
-                            <p className="mb-2">No compiled abstract found for this case container.</p>
-                            <button
-                              onClick={handleGenerateSummary}
-                              className="px-3 py-1 bg-neutral-900 border border-neutral-800 rounded hover:text-white"
-                            >
-                              {t("build_forensic_timeline")}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* SEMANTIC VECTOR SEARCH */}
-                      <div className="border border-neutral-900 rounded-lg p-5 bg-black/60 font-mono">
-                        <div className="mb-3">
-                          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                            {t("semantic_query_title")}
-                          </h3>
-                          <p className="text-[9px] text-neutral-500 mt-0.5">
-                            {t("semantic_query_desc")}
-                          </p>
-                        </div>
-
-                        <form onSubmit={handleSemanticSearch} className="flex gap-2 mb-4">
-                          <input
-                            type="text"
-                            placeholder={t("ask_questions_placeholder")}
-                            value={semanticQuery}
-                            onChange={(e) => setSemanticQuery(e.target.value)}
-                            className="flex-1 bg-black border border-neutral-900 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-neutral-700"
-                          />
-                          <button
-                            type="submit"
-                            disabled={isSearching}
-                            className="px-4 py-1.5 bg-white text-black font-bold text-xs rounded hover:bg-neutral-200 cursor-pointer disabled:opacity-50"
-                          >
-                            {isSearching ? t("analyzing") : t("query_case")}
-                          </button>
-                        </form>
-
-                        {/* SEARCH RESULTS */}
-                        {searchResults && (
-                          <div className="space-y-3 animate-fadeIn border-t border-neutral-900 pt-4">
-                            <div className="flex justify-between items-center">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                                {t("semantic_matches")} ({searchResults.length})
-                              </span>
-                              <button
-                                onClick={() => {
-                                  setSearchResults(null);
-                                  setSemanticQuery("");
-                                }}
-                                className="text-[9px] text-neutral-650 hover:text-neutral-400 font-bold"
-                              >
-                                {t("clear_results")}
-                              </button>
-                            </div>
-                            <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-                              {searchResults.map((match: any, index: number) => (
-                                <div key={index} className="p-3 border border-neutral-900 rounded bg-neutral-950/60 text-[11px] leading-relaxed">
-                                  <div className="flex justify-between items-center mb-1 text-[9px] text-neutral-500">
-                                    <span className="font-bold text-neutral-400">
-                                      {t("match")} #{index + 1} (Score: {(match.similarity * 100).toFixed(1)}%)
-                                    </span>
-                                    <span>
-                                      {t("source_type")}: {match.mime_type}
-                                    </span>
-                                  </div>
-                                  <p className="text-neutral-300 whitespace-pre-wrap">
-                                    {match.content}
-                                  </p>
-                                  <div className="text-[8px] text-neutral-600 mt-1 border-t border-neutral-900/40 pt-1">
-                                    SOURCE FILE: {match.original_filename}
-                                  </div>
+                      ) : (
+                        <div className="relative ml-3 pl-6 border-l border-brand-border space-y-6">
+                          {activeCase.logs?.map((log: any, idx: number) => (
+                            <div key={log.id} className="relative animate-fade-in-left" style={{ animationDelay: `${idx * 0.05}s` }}>
+                              {/* Timeline node */}
+                              <div className={`absolute -left-[29px] top-1 w-4 h-4 rounded-full border-2 bg-brand-black flex items-center justify-center
+                                ${log.action_type.includes('UPLOADED') ? 'border-brand-blue' : 
+                                  log.action_type.includes('TRANSFERRED') ? 'border-brand-purple' : 
+                                  log.action_type.includes('VERIFIED') ? 'border-brand-green' : 'border-brand-dim'}
+                              `}>
+                                <div className={`w-1.5 h-1.5 rounded-full 
+                                  ${log.action_type.includes('UPLOADED') ? 'bg-brand-blue' : 
+                                    log.action_type.includes('TRANSFERRED') ? 'bg-brand-purple' : 
+                                    log.action_type.includes('VERIFIED') ? 'bg-brand-green' : 'bg-brand-dim'}
+                                `} />
+                              </div>
+                              
+                              <div className="card-hover p-3 rounded-xl border border-brand-border bg-brand-card/30 hover:bg-brand-card/50">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-[10px] font-mono text-brand-dim">{new Date(log.created_at).toLocaleString()}</span>
+                                  <span className={`text-[8px] font-mono font-bold tracking-wider px-2 py-0.5 rounded-md border
+                                    ${log.action_type.includes('UPLOADED') ? 'border-brand-blue/20 text-brand-blue bg-brand-blue/5' : 
+                                      log.action_type.includes('TRANSFERRED') ? 'border-brand-purple/20 text-brand-purple bg-brand-purple/5' : 
+                                      log.action_type.includes('VERIFIED') ? 'border-brand-green/20 text-brand-green bg-brand-green/5' : 
+                                      'border-brand-border text-brand-dim'}
+                                  `}>
+                                    {lang === 'en' ? log.action_type : (translatedContent[`${lang}_log_action_${log.id}`] || log.action_type)}
+                                  </span>
                                 </div>
-                              ))}
-                              {searchResults.length === 0 && (
-                                <p className="text-center py-6 text-xs text-neutral-600">
-                                  {t("no_semantic_matches")}
-                                </p>
-                              )}
+                                <div className="font-bold text-brand-white mb-0.5">
+                                  {lang === 'en' ? log.actor : (translatedContent[`${lang}_log_actor_${log.id}`] || log.actor)}
+                                </div>
+                                <div className="text-brand-dim mb-3">
+                                  {lang === 'en' ? log.details : (translatedContent[`${lang}_log_details_${log.id}`] || log.details)}
+                                </div>
+                                <div className="text-[8px] text-brand-muted mt-2 font-mono truncate flex items-center gap-1">
+                                  <Fingerprint className="w-2.5 h-2.5 flex-shrink-0" />
+                                  {log.log_hash}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* EXTRACTED ENTITIES & AUTOMATED TIMELINE (1 COL) */}
-                    <div className="space-y-6">
-                      {/* ENTITIES CARD */}
-                      <div className="border border-neutral-900 rounded-lg p-5 bg-black/60 font-mono">
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-white mb-2">
-                          {t("extracted_entities")}
-                        </h3>
-                        <p className="text-[9px] text-neutral-500 leading-relaxed mb-4">
-                          {t("extracted_entities_desc")}
-                        </p>
-
-                        <div className="flex flex-wrap gap-1.5">
-                          {aiInsights.entities.map((ent) => (
-                            <button
-                              key={ent.id}
-                              onClick={() =>
-                                setSelectedEntityFilter(
-                                  selectedEntityFilter === ent.entity_value ? null : ent.entity_value
-                                )
-                              }
-                              className={`px-2 py-0.5 rounded text-[8px] font-semibold border transition-all cursor-pointer ${
-                                selectedEntityFilter === ent.entity_value
-                                  ? "bg-white border-white text-black font-bold"
-                                  : "bg-neutral-950 border-neutral-850 text-neutral-400 hover:border-neutral-700 hover:text-white"
-                              }`}
-                            >
-                              {ent.entity_value}
-                              <span className="text-[7px] opacity-60 ml-1 font-mono uppercase">
-                                ({ent.entity_type.substring(0, 3)})
-                              </span>
-                            </button>
                           ))}
-                          {aiInsights.entities.length === 0 && (
-                            <p className="text-[10px] text-neutral-600 italic py-3">
-                              {t("entities_placeholder")}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tab: AI Advisory */}
+                  {activeTab === 'ai' && (
+                    <div className="space-y-6 max-h-[650px] overflow-y-auto pr-1 animate-fade-in">
+                      
+                      {/* Summary card */}
+                      <div className="rounded-xl border border-brand-border bg-brand-card/30 overflow-hidden animate-fade-in-up">
+                        <div className="flex items-center justify-between p-4 border-b border-brand-border/50">
+                          <h3 className="font-syne font-bold text-xs uppercase tracking-wider text-brand-blue flex items-center gap-2">
+                            <Cpu className="w-3.5 h-3.5" />
+                            {t.aiSummary}
+                          </h3>
+                          <button 
+                            onClick={handleRegenerateSummary}
+                            disabled={aiSummaryLoading}
+                            className="p-1.5 rounded-lg border border-brand-border hover:border-brand-blue/30 text-brand-dim hover:text-brand-blue transition-all cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${aiSummaryLoading ? 'animate-spin' : ''}`} />
+                          </button>
+                        </div>
+                        <div className="p-4">
+                          {aiSummaryLoading ? (
+                            <div className="space-y-2">
+                              <div className="h-3 shimmer rounded w-full" />
+                              <div className="h-3 shimmer rounded w-4/5" />
+                              <div className="h-3 shimmer rounded w-3/5" />
+                            </div>
+                          ) : (
+                            <p className="text-xs leading-relaxed text-brand-white/80 font-mono whitespace-pre-line">
+                              {lang === 'en' ? aiSummary : (translatedContent[`${lang}_summary_${activeCase.id}`] || aiSummary || "No summary available. Upload files to generate.")}
                             </p>
                           )}
                         </div>
                       </div>
 
-                      {/* AUTOMATED TIMELINE EVENTS */}
-                      <div className="border border-neutral-900 rounded-lg p-5 bg-black/60 font-mono">
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-white mb-1">
-                          {t("automated_timeline_title")}
-                        </h3>
-                        <p className="text-[9px] text-neutral-500 leading-relaxed mb-4">
-                          {t("automated_timeline_desc")}
-                        </p>
-
-                        {isAiLoading && !aiInsights.timeline.length ? (
-                          <div className="py-8 text-center text-neutral-600 text-xs">
-                            <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin" />
-                            <span>{t("analyzing")}</span>
-                          </div>
-                        ) : aiInsights.timeline.length ? (
-                          <div className="space-y-4 max-h-96 overflow-y-auto pr-1 custom-scrollbar">
-                            {aiInsights.timeline
-                              .filter((e) => {
-                                if (!selectedEntityFilter) return true;
-                                return e.description.toLowerCase().includes(selectedEntityFilter.toLowerCase());
-                              })
-                              .map((ev) => (
-                                <div key={ev.id} className="p-3 border border-neutral-900 rounded bg-neutral-950/40 text-[10px] leading-relaxed">
-                                  <div className="text-[8px] text-neutral-500 mb-1 flex justify-between">
-                                    <span className="font-bold">{ev.event_timestamp}</span>
-                                    <span className="uppercase">Conf: {ev.confidence}</span>
+                      {/* AI Timeline */}
+                      <div className="rounded-xl border border-brand-border bg-brand-card/30 overflow-hidden animate-fade-in-up delay-1">
+                        <div className="p-4 border-b border-brand-border/50">
+                          <h3 className="font-syne font-bold text-xs uppercase tracking-wider text-brand-blue flex items-center gap-2">
+                            <Terminal className="w-3.5 h-3.5" />
+                            {t.suggestedTimeline}
+                          </h3>
+                        </div>
+                        <div className="p-4">
+                          {aiTimeline.length === 0 ? (
+                            <p className="text-[10px] text-brand-dim font-mono text-center py-4">No timeline events. Upload evidence to generate.</p>
+                          ) : (
+                            <div className="space-y-4 border-l border-brand-border/30 pl-4 ml-1">
+                              {aiTimeline.map((evt, idx) => (
+                                <div key={evt.id} className="relative animate-fade-in-left" style={{ animationDelay: `${idx * 0.08}s` }}>
+                                  <div className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-brand-blue" />
+                                  <div className="text-[10px] text-brand-dim font-mono">{new Date(evt.event_date).toLocaleString()}</div>
+                                  <h4 className="text-xs text-brand-white font-semibold mt-0.5">
+                                    {lang === 'en' ? evt.title : (translatedContent[`${lang}_tl_title_${evt.id}`] || evt.title)}
+                                  </h4>
+                                  <p className="text-[10px] text-brand-dim mt-0.5">
+                                    {lang === 'en' ? evt.description : (translatedContent[`${lang}_tl_desc_${evt.id}`] || evt.description)}
+                                  </p>
+                                  <div className="text-[9px] text-brand-blue/60 italic mt-1 flex items-start gap-1">
+                                    <CornerDownRight className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                                    <span>
+                                      {lang === 'en' ? evt.explanation : (translatedContent[`${lang}_tl_exp_${evt.id}`] || evt.explanation)}
+                                    </span>
                                   </div>
-                                  <p className="text-neutral-300">{ev.description}</p>
                                 </div>
                               ))}
-                            {aiInsights.timeline.filter((e) => {
-                              if (!selectedEntityFilter) return true;
-                              return e.description.toLowerCase().includes(selectedEntityFilter.toLowerCase());
-                            }).length === 0 && (
-                              <p className="text-center py-6 text-neutral-600 text-xs">
-                                {t("no_timeline_match")}
-                              </p>
-                            )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Entities */}
+                      <div className="rounded-xl border border-brand-border bg-brand-card/30 overflow-hidden animate-fade-in-up delay-2">
+                        <div className="p-4 border-b border-brand-border/50">
+                          <h3 className="font-syne font-bold text-xs uppercase tracking-wider text-brand-blue flex items-center gap-2">
+                            <Eye className="w-3.5 h-3.5" />
+                            {t.extractedEntities}
+                          </h3>
+                        </div>
+                        <div className="p-4">
+                          {aiEntities.length === 0 ? (
+                            <p className="text-[10px] text-brand-dim font-mono text-center py-4">No entities extracted yet.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {aiEntities.map(ent => (
+                                <span 
+                                  key={ent.id} 
+                                  className="tag text-[9px] font-mono border border-brand-border px-2 py-1 rounded-lg bg-brand-white/[0.02] text-brand-white cursor-help"
+                                  title={`Context: ${lang === 'en' ? ent.context_snippet : (translatedContent[`${lang}_ent_ctx_${ent.id}`] || ent.context_snippet)}`}
+                                >
+                                  <strong className="text-brand-blue text-[8px] uppercase mr-1">
+                                    {lang === 'en' ? ent.entity_type : (translatedContent[`${lang}_ent_type_${ent.id}`] || ent.entity_type)}:
+                                  </strong>
+                                  {lang === 'en' ? ent.entity_value : (translatedContent[`${lang}_ent_val_${ent.id}`] || ent.entity_value)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tab: Semantic Search */}
+                  {activeTab === 'search' && (
+                    <div className="space-y-6 animate-fade-in">
+                      <form onSubmit={handleSemanticSearch} className="flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder={t.searchPrompt}
+                          value={semanticSearchQuery}
+                          onChange={(e) => setSemanticSearchQuery(e.target.value)}
+                          className="flex-1 bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-xs text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors font-mono"
+                        />
+                        <button 
+                          type="submit"
+                          disabled={semanticSearchLoading}
+                          className="btn-primary bg-brand-blue text-brand-black rounded-xl px-4 py-2.5 text-[10px] font-bold font-mono uppercase cursor-pointer disabled:opacity-50"
+                        >
+                          {semanticSearchLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : t.searchButton}
+                        </button>
+                      </form>
+
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                        {semanticSearchLoading ? (
+                          <div className="text-center py-12 text-brand-dim animate-fade-in">
+                            <div className="relative inline-block">
+                              <Search className="w-8 h-8 animate-pulse text-brand-blue" />
+                            </div>
+                            <p className="text-xs font-mono mt-3">SCANNING VECTOR SPACE...</p>
+                          </div>
+                        ) : semanticSearchResults.length === 0 ? (
+                          <div className="text-center py-12 text-brand-dim animate-fade-in">
+                            <Search className="w-8 h-8 mx-auto mb-3 opacity-20" />
+                            <p className="text-xs font-mono">Execute a semantic query to search evidence.</p>
                           </div>
                         ) : (
-                          <div className="py-8 text-center text-neutral-600 text-xs">
-                            <p className="mb-2">{t("no_timeline_records")}</p>
-                            <button
-                              onClick={handleGenerateTimeline}
-                              className="px-3 py-1 bg-neutral-900 border border-neutral-800 rounded hover:text-white"
-                            >
-                              {t("build_forensic_timeline")}
-                            </button>
-                          </div>
+                          semanticSearchResults.map((res, idx) => (
+                            <div key={idx} className="card-hover border border-brand-border p-4 rounded-xl bg-brand-card/30 animate-fade-in-up" style={{ animationDelay: `${idx * 0.08}s` }}>
+                              <div className="flex items-center justify-between text-[9px] text-brand-dim mb-2 font-mono">
+                                <span className="font-bold uppercase text-brand-blue flex items-center gap-1">
+                                  <LinkIcon className="w-3 h-3" />
+                                  {res.original_filename || "CASE SUMMARY"}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md bg-brand-blue/5 border border-brand-blue/20 text-brand-blue">
+                                  {(res.similarity * 100).toFixed(1)}% match
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-brand-white/80 leading-relaxed font-mono whitespace-pre-line">
+                                "{res.content}"
+                              </p>
+                            </div>
+                          ))
                         )}
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* NO CASE SELECTED INTERACTIVE OVERLAY */
-          <div className="flex-1 flex flex-col justify-center items-center p-8 text-center font-mono">
-            <div className="max-w-md p-6 border border-neutral-900 bg-neutral-950/60 rounded-lg backdrop-blur shadow-[0_0_25px_rgba(0,0,0,0.8)]">
-              <Shield className="w-8 h-8 text-neutral-550 mx-auto mb-4" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">{t("no_case_selected_title")}</h2>
-              <p className="text-[10px] text-neutral-500 leading-relaxed mt-2">
-                {t("no_case_selected_desc")}
-              </p>
-              <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="px-4 py-2 bg-white text-black font-bold rounded text-xs cursor-pointer hover:bg-neutral-200"
-                >
-                  {t("initialize_case_file")}
-                </button>
-                <button
-                  onClick={handleSeedDemoCase}
-                  className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-750 text-neutral-300 rounded text-xs cursor-pointer"
-                >
-                  {t("seed_demo_case")}
-                </button>
               </div>
             </div>
-          </div>
-        )}
-      </main>
 
-      {/* FLOATING BOTTOM LEFT SETTINGS BAR */}
-      <div className="absolute bottom-5 left-85 flex items-center space-x-6 z-30 font-mono text-[9px] text-neutral-500 bg-black/40 backdrop-blur-sm px-4 py-1.5 rounded border border-neutral-900/40">
-        {/* CANVAS MODE TOGGLE (SHIFT button) */}
-        <div className="flex items-center space-x-2">
-          <span>SHIFT:</span>
-          <button
-            onClick={() => {
-              if (canvasMode === "WIREFRAME") setCanvasMode("HALFTONE");
-              else if (canvasMode === "HALFTONE") setCanvasMode("ORBITS");
-              else setCanvasMode("WIREFRAME");
-            }}
-            className="px-2 py-0.5 bg-neutral-950 border border-neutral-850 hover:border-neutral-700 text-white rounded text-[8px] cursor-pointer tracking-wider font-bold"
-          >
-            {canvasMode}
-          </button>
-        </div>
+          ) : (
+            /* ═══ EMPTY STATE / HERO ═══ */
+            <div className="flex items-center justify-center min-h-[calc(100vh-52px)] p-8 animate-fade-in">
+              <div className="text-center max-w-lg">
+                {/* Animated shield icon */}
+                <div className="relative inline-block mb-8">
+                  <div className="absolute inset-0 bg-brand-blue/10 rounded-full blur-3xl scale-150" />
+                  <div className="relative p-6 rounded-3xl bg-gradient-to-br from-brand-blue/10 to-transparent border border-brand-blue/10 animate-float">
+                    <Shield className="w-16 h-16 text-brand-blue" />
+                  </div>
+                </div>
 
-        {/* REGIONAL LOCALIZATION DROPDOWN */}
-        <div className="flex items-center space-x-2 border-l border-neutral-900 pl-4">
-          <Globe className="w-3.5 h-3.5" />
-          <button
-            onClick={() => {
-              const next = lang === "en" ? "hi" : lang === "hi" ? "te" : "en";
-              setLang(next);
-              localStorage.setItem("trace_lang", next);
-            }}
-            className="px-2 py-0.5 bg-neutral-950 border border-neutral-850 hover:border-neutral-700 text-white rounded text-[8px] cursor-pointer tracking-wider font-bold uppercase"
-          >
-            {lang === "en" ? "English" : lang === "hi" ? "हिंदी" : "తెలుగు"}
-          </button>
-        </div>
+                <h2 className="font-syne font-extrabold text-3xl lg:text-4xl tracking-tight text-brand-white mb-3 animate-fade-in-up delay-1">
+                  {t.heroTitle}
+                </h2>
+                <p className="text-sm text-brand-dim mb-2 font-mono animate-fade-in-up delay-2">
+                  {t.heroDesc}
+                </p>
+                <p className="text-xs text-brand-muted mb-8 max-w-sm mx-auto animate-fade-in-up delay-3">
+                  {t.noCaseSelected}
+                </p>
+
+                {/* Quick stats */}
+                <div className="flex items-center justify-center gap-6 mb-8 animate-fade-in-up delay-4">
+                  <div className="text-center">
+                    <div className="font-syne font-extrabold text-2xl text-brand-blue stat-number">{cases.length}</div>
+                    <div className="text-[10px] font-mono text-brand-dim uppercase">{t.caseCount}</div>
+                  </div>
+                  <div className="h-8 w-px bg-brand-border" />
+                  <div className="text-center">
+                    <div className="font-syne font-extrabold text-2xl text-brand-green stat-number animate-pulse">●</div>
+                    <div className="text-[10px] font-mono text-brand-dim uppercase">{t.systemOnline}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap justify-center animate-fade-in-up delay-5">
+                  <button 
+                    onClick={() => setShowCreateModal(true)}
+                    className="btn-primary inline-flex items-center gap-2 bg-brand-blue text-brand-black rounded-xl px-6 py-3 font-bold font-mono text-sm uppercase cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {t.newCase}
+                  </button>
+
+                  {showDemoPrompt && (
+                    <button 
+                      onClick={handleGenerateDemo}
+                      disabled={demoLoading}
+                      className="btn-primary inline-flex items-center gap-2 bg-brand-white/[0.05] border border-brand-border text-brand-white rounded-xl px-6 py-3 font-bold font-mono text-sm uppercase cursor-pointer hover:border-brand-blue/50 disabled:opacity-50"
+                    >
+                      {demoLoading ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
+                      {demoLoading ? t.generating : t.loadDemo}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
 
-      {/* 1. INITIALIZE NEW CASE DIALOG MODAL */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-full max-w-md bg-neutral-950 border border-neutral-850 rounded-lg p-6 font-mono text-xs">
-            <div className="flex justify-between items-center border-b border-neutral-900 pb-3 mb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-white">{t("open_new_case")}</h3>
-              <button onClick={() => setIsCreateModalOpen(false)} className="text-neutral-500 hover:text-white cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={handleCreateCase} className="space-y-4">
-              <div>
-                <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                  {t("ref_id_label")}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. CRIM-2026-X89"
-                  value={createForm.reference_id}
-                  onChange={(e) => setCreateForm({ ...createForm, reference_id: e.target.value })}
-                  className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-200"
-                />
-              </div>
-              <div>
-                <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                  {t("case_title_label")}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Operation Phantom Exfil"
-                  value={createForm.title}
-                  onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
-                  className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-200"
-                />
-              </div>
-              <div>
-                <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                  {t("scope_abstract_label")}
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Investigative abstract detailed scope of collection..."
-                  value={createForm.description}
-                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                  className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-200"
-                />
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded cursor-pointer"
-                >
-                  {t("cancel")}
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-white text-black font-bold rounded cursor-pointer hover:bg-neutral-200"
-                >
-                  {t("initialize_case_file")}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 2. TRANSFER CUSTODY DIALOG MODAL */}
-      {isTransferModalOpen && transferTargetEvidence && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-full max-w-md bg-neutral-950 border border-neutral-850 rounded-lg p-6 font-mono text-xs">
-            <div className="flex justify-between items-center border-b border-neutral-900 pb-3 mb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-white">{t("transfer_custody_log")}</h3>
-              <button onClick={() => setIsTransferModalOpen(false)} className="text-neutral-500 hover:text-white cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-neutral-450 mb-4">
-              {t("logging_custody_for")}: <span className="text-white font-bold">{transferTargetEvidence.original_filename}</span>
-            </p>
-            <form onSubmit={handleTransferCustody} className="space-y-4">
-              <div>
-                <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                  {t("recipient_identity_label")}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Officer Miller"
-                  value={transferForm.recipient}
-                  onChange={(e) => setTransferForm({ ...transferForm, recipient: e.target.value })}
-                  className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-200"
-                />
-              </div>
-              <div>
-                <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                  {t("reason_for_transfer_label")}
-                </label>
-                <textarea
-                  rows={2}
-                  required
-                  placeholder="Forensic analysis laboratory relocation, evidence locker storage..."
-                  value={transferForm.reason}
-                  onChange={(e) => setTransferForm({ ...transferForm, reason: e.target.value })}
-                  className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-200"
-                />
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsTransferModalOpen(false)}
-                  className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded cursor-pointer"
-                >
-                  {t("cancel")}
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-white text-black font-bold rounded cursor-pointer hover:bg-neutral-200"
-                >
-                  {t("log_custody_transfer")}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 3. SETTINGS & PARAMETERS CONFIGURATION DRAWER */}
-      {isSettingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-full max-w-lg bg-neutral-950 border border-neutral-850 rounded-lg p-6 font-mono text-xs">
-            <div className="flex justify-between items-center border-b border-neutral-900 pb-3 mb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-white flex items-center space-x-2">
-                <Settings className="w-4 h-4 text-indigo-400" />
-                <span>{t("settings_title")}</span>
-              </h3>
-              <button onClick={() => setIsSettingsOpen(false)} className="text-neutral-500 hover:text-white cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <form onSubmit={saveConfiguration} className="space-y-4">
-              {/* Language Selection */}
-              <div>
-                <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                  {t("language_label")}
-                </label>
-                <select
-                  value={lang}
-                  onChange={(e) => setLang(e.target.value)}
-                  className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-250 font-semibold"
-                >
-                  <option value="en">English (US)</option>
-                  <option value="hi">हिंदी (Hindi)</option>
-                  <option value="te">తెలుగు (Telugu)</option>
-                </select>
+      {/* ═══ CREATE CASE MODAL ═══ */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowCreateModal(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-md animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl border border-brand-border bg-brand-surface overflow-hidden shadow-2xl">
+              <div className="p-6 border-b border-brand-border bg-gradient-to-r from-brand-blue/[0.05] to-transparent">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-syne font-extrabold text-lg text-brand-white flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-brand-blue/10">
+                      <Plus className="w-4 h-4 text-brand-blue" />
+                    </div>
+                    Initialize Case
+                  </h3>
+                  <button 
+                    onClick={() => setShowCreateModal(false)}
+                    className="p-1.5 rounded-lg hover:bg-brand-white/5 text-brand-dim hover:text-brand-white transition-all cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              {/* AI Provider Config */}
-              <div>
-                <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                  {t("ai_provider_label")}
-                </label>
-                <select
-                  value={aiProvider}
-                  onChange={(e) => setAiProvider(e.target.value)}
-                  className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-250 font-semibold"
-                >
-                  <option value="gemini">Google Gemini API (BYOK)</option>
-                  <option value="ollama">Local AI Inference (Ollama)</option>
-                </select>
-              </div>
-
-              {/* BYOK: Gemini API Key */}
-              {aiProvider === "gemini" && (
-                <div className="animate-fadeIn">
-                  <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
-                    <span>{t("gemini_key_label")}</span>
-                    <span className="text-[8px] text-indigo-400 normal-case font-normal">(Tokens stored locally)</span>
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="AIzaSy..."
-                    value={geminiApiKey}
-                    onChange={(e) => setGeminiApiKey(e.target.value)}
-                    className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-200"
+              <form onSubmit={handleCreateCase} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">{t.refIdLabel}</label>
+                  <input 
+                    type="text" 
+                    value={newCaseRef}
+                    onChange={(e) => setNewCaseRef(e.target.value.replace(/[^A-Za-z0-9_-]/g, ''))}
+                    placeholder="e.g. CASE-2026A"
+                    className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors font-mono uppercase"
+                    required
                   />
                 </div>
-              )}
 
-              {/* Local AI inference parameters */}
-              {aiProvider === "ollama" && (
-                <div className="space-y-4 animate-fadeIn">
-                  <div>
-                    <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                      {t("ollama_host_label")}
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="http://localhost:11434"
-                      value={ollamaHost}
-                      onChange={(e) => setOllamaHost(e.target.value)}
-                      className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-250 font-mono"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                        {t("ollama_model_label")}
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="llama3"
-                        value={ollamaModel}
-                        onChange={(e) => setOllamaModel(e.target.value)}
-                        className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-250 font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-neutral-500 font-bold uppercase tracking-wider mb-1">
-                        {t("ollama_embed_model_label")}
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="nomic-embed-text"
-                        value={ollamaEmbedModel}
-                        onChange={(e) => setOllamaEmbedModel(e.target.value)}
-                        className="w-full bg-black border border-neutral-900 rounded p-2 focus:outline-none focus:border-neutral-700 text-neutral-250 font-mono"
-                      />
-                    </div>
-                  </div>
+                <div>
+                  <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">{t.titleLabel}</label>
+                  <input 
+                    type="text" 
+                    value={newCaseTitle}
+                    onChange={(e) => setNewCaseTitle(e.target.value)}
+                    placeholder="e.g. Corporate Securities Fraud"
+                    className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors"
+                    required
+                  />
                 </div>
-              )}
 
-              <div className="flex justify-end space-x-2 pt-4 border-t border-neutral-900">
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsOpen(false)}
-                  className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-350 rounded cursor-pointer"
-                >
-                  {t("cancel")}
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-white text-black font-bold rounded cursor-pointer hover:bg-neutral-200"
-                >
-                  {t("save_settings")}
-                </button>
-              </div>
-            </form>
+                <div>
+                  <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">{t.descLabel}</label>
+                  <textarea 
+                    value={newCaseDesc}
+                    onChange={(e) => setNewCaseDesc(e.target.value)}
+                    placeholder="Detailed context..."
+                    className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors h-20 resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">{t.creator}</label>
+                  <input 
+                    type="text" 
+                    value={newCaseCreator}
+                    onChange={(e) => setNewCaseCreator(e.target.value)}
+                    placeholder="e.g. Sarah Jenkins"
+                    className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors"
+                    required
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="flex-1 border border-brand-border rounded-xl px-4 py-2.5 text-sm font-bold text-brand-dim hover:text-brand-white hover:border-brand-border-active transition-all cursor-pointer"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button 
+                    type="submit"
+                    className="btn-primary flex-1 bg-brand-blue text-brand-black rounded-xl px-4 py-2.5 text-sm font-bold cursor-pointer"
+                  >
+                    {t.submit}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
 
-      {/* CONFIGURATION SAVED ALERT TOAST */}
-      {showSavedAlert && (
-        <div className="fixed bottom-5 right-5 z-50 bg-neutral-950 border border-neutral-700 text-white px-4 py-2.5 rounded font-mono text-xs shadow-lg flex items-center space-x-2 animate-fadeIn">
-          <Check className="w-4 h-4 text-emerald-500 animate-bounce" />
-          <span>{t("settings_saved_alert")}</span>
+      {/* ═══ TRANSFER MODAL ═══ */}
+      {showTransferModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowTransferModal(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-md animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl border border-brand-border bg-brand-surface overflow-hidden shadow-2xl">
+              <div className="p-6 border-b border-brand-border bg-gradient-to-r from-brand-purple/[0.05] to-transparent">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-syne font-extrabold text-lg text-brand-white flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-brand-purple/10">
+                      <CornerDownRight className="w-4 h-4 text-brand-purple" />
+                    </div>
+                    {t.transferTitle}
+                  </h3>
+                  <button 
+                    onClick={() => setShowTransferModal(false)}
+                    className="p-1.5 rounded-lg hover:bg-brand-white/5 text-brand-dim hover:text-brand-white transition-all cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleTransferCustody} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">{t.actor}</label>
+                  <input 
+                    type="text" 
+                    value={transferActor}
+                    onChange={(e) => setTransferActor(e.target.value)}
+                    placeholder="e.g. Sarah Jenkins"
+                    className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-purple/50 transition-colors"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">{t.recipient}</label>
+                  <input 
+                    type="text" 
+                    value={transferRecipient}
+                    onChange={(e) => setTransferRecipient(e.target.value)}
+                    placeholder="e.g. Detective Mark Gable"
+                    className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-purple/50 transition-colors"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">{t.reason}</label>
+                  <textarea 
+                    value={transferReason}
+                    onChange={(e) => setTransferReason(e.target.value)}
+                    placeholder="Reason for custody transfer..."
+                    className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-purple/50 transition-colors h-20 resize-none"
+                    required
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setShowTransferModal(false)}
+                    className="flex-1 border border-brand-border rounded-xl px-4 py-2.5 text-sm font-bold text-brand-dim hover:text-brand-white hover:border-brand-border-active transition-all cursor-pointer"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button 
+                    type="submit"
+                    className="btn-primary flex-1 bg-brand-purple text-white rounded-xl px-4 py-2.5 text-sm font-bold cursor-pointer"
+                  >
+                    {t.transferSubmit}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
+
+      {/* ═══ SETTINGS MODAL (BYOK & LOCAL AI) ═══ */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => { if(hasSeenSetup) setShowSettingsModal(false); }}>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+          <div className="relative w-full max-w-md animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl border border-brand-border bg-brand-surface overflow-hidden shadow-2xl">
+              <div className="p-6 border-b border-brand-border bg-gradient-to-r from-brand-blue/[0.05] to-transparent">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-syne font-extrabold text-lg text-brand-white flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-brand-blue/10">
+                      <Settings className="w-4 h-4 text-brand-blue" />
+                    </div>
+                    {hasSeenSetup ? 'AI SETTINGS' : 'WELCOME TO TRACE'}
+                  </h3>
+                  {hasSeenSetup && (
+                    <button 
+                      onClick={() => setShowSettingsModal(false)}
+                      className="p-1.5 rounded-lg hover:bg-brand-white/5 text-brand-dim hover:text-brand-white transition-all cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {!hasSeenSetup && (
+                  <p className="text-xs text-brand-muted mt-2 leading-relaxed">
+                    Please configure your AI engine. We support the Gemini API as well as local inference using Ollama.
+                  </p>
+                )}
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-brand-border bg-brand-white/[0.02]">
+                  <input
+                    type="checkbox"
+                    id="useLocalAI"
+                    checked={useLocalAI}
+                    onChange={(e) => setUseLocalAI(e.target.checked)}
+                    className="w-4 h-4 rounded border-brand-border text-brand-blue focus:ring-brand-blue bg-brand-surface cursor-pointer"
+                  />
+                  <label htmlFor="useLocalAI" className="text-sm font-bold text-brand-white cursor-pointer select-none">
+                    Use Local AI (Ollama)
+                  </label>
+                </div>
+
+                {!useLocalAI ? (
+                  <div className="space-y-4 animate-fade-in">
+                    <div>
+                      <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">Gemini API Key (BYOK)</label>
+                      <input 
+                        type="password" 
+                        value={geminiApiKey}
+                        onChange={(e) => setGeminiApiKey(e.target.value)}
+                        placeholder="AIzaSy..."
+                        className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors"
+                      />
+                      <p className="text-[10px] text-brand-dim mt-1.5 leading-relaxed">
+                        Your key is stored locally in your browser and sent securely via standard HTTP headers. If left blank, it will use the default server key or Mock mode.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 animate-fade-in">
+                    <div>
+                      <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">Ollama Endpoint</label>
+                      <input 
+                        type="text" 
+                        value={ollamaEndpoint}
+                        onChange={(e) => setOllamaEndpoint(e.target.value)}
+                        placeholder="http://localhost:11434"
+                        className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-brand-dim text-[10px] uppercase font-mono font-bold mb-1.5 tracking-wider">Ollama Model</label>
+                      <input 
+                        type="text" 
+                        value={ollamaModel}
+                        onChange={(e) => setOllamaModel(e.target.value)}
+                        placeholder="llama3"
+                        className="w-full bg-brand-white/[0.03] border border-brand-border rounded-xl px-4 py-2.5 text-sm text-brand-white placeholder:text-brand-muted focus:outline-none focus:border-brand-blue/50 transition-colors"
+                      />
+                      <p className="text-[10px] text-brand-dim mt-1.5 leading-relaxed">
+                        Ensure the Ollama daemon is running locally and the model is installed.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <button 
+                    onClick={() => {
+                      setHasSeenSetup(true);
+                      setShowSettingsModal(false);
+                    }}
+                    className="w-full btn-primary bg-brand-blue text-brand-black rounded-xl px-4 py-2.5 text-sm font-bold cursor-pointer hover:brightness-110 transition-all"
+                  >
+                    {hasSeenSetup ? 'SAVE SETTINGS' : 'START INVESTIGATION'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }

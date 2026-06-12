@@ -113,26 +113,40 @@ bundle.zip
 
 ## Architecture
 
-```text
-┌────────────────────┐
-│ React Frontend     │
-└─────────┬──────────┘
-          │
-          ▼
-┌────────────────────┐
-│ Express API        │
-└─────┬────────┬─────┘
-      │        │
-      ▼        ▼
-┌─────────┐ ┌────────────┐
-│Postgres │ │File Storage│
-└────┬────┘ └─────┬──────┘
-     │            │
-     └────┬───────┘
-          ▼
-┌────────────────────┐
-│ Verification Layer │
-└────────────────────┘
+```mermaid
+sequenceDiagram
+    actor Investigator
+    participant F as Frontend (React/Vite)
+    participant B as Backend (Express API)
+    participant DB as PostgreSQL (pgvector)
+    participant AI as AI Engine (Gemini / Ollama)
+
+    Investigator->>F: 1. Toggle AI Settings (Gemini / Local)
+    Investigator->>F: 2. Upload Evidence (PDF, Image, etc.)
+    F->>B: 3. HTTP POST /cases/:id/evidence
+    
+    rect rgb(20, 30, 40)
+        note right of B: Cryptographic Verification
+        B-->>B: Compute SHA-256 Hash
+        B->>DB: Record Custody Chain Log
+    end
+    
+    B->>F: 4. Evidence Ingested Successfully
+    
+    Investigator->>F: 5. Request AI Analysis & Entity Extraction
+    F->>B: 6. HTTP GET /cases/:id/entities
+    
+    rect rgb(30, 20, 40)
+        note right of B: AI Processing Pipeline
+        B->>AI: Send prompt & raw evidence data
+        AI-->>B: Return structured JSON entities
+        B->>AI: Generate 1536-dimensional embeddings
+        AI-->>B: Return vector arrays
+        B->>DB: Store embeddings for Semantic Search
+    end
+    
+    B->>F: 7. Return Analysis Results
+    F->>Investigator: 8. Display Dynamic Investigation Timeline
 ```
 
 ---
@@ -145,6 +159,7 @@ bundle.zip
 * TypeScript
 * Vite
 * Tailwind CSS
+* React Three Fiber (3D UX)
 
 ### Backend
 
@@ -156,24 +171,22 @@ bundle.zip
 
 ### Database
 
-* PostgreSQL
+* PostgreSQL (pgvector)
 
 ### Security
 
 * Node Crypto
 * SHA-256 Hashing
 
-### Reporting
+### AI Integration
+
+* Google Gemini API
+* Local Ollama Instance
+
+### Reporting & Bundling
 
 * PDFKit
-
-### Bundle Export
-
 * Archiver
-
-### Testing
-
-* Vitest
 
 ---
 
@@ -208,6 +221,8 @@ TRACE/
 * Verify Integrity
 * PDF Report Generation
 * Evidence Bundle Export
+* AI Semantic Search & Analysis
+* 3D WebGL Dashboard
 
 ### Future Roadmap
 
@@ -215,7 +230,6 @@ TRACE/
 * Role-based access control
 * Digital signatures
 * Secure evidence sharing
-* AI-assisted analysis
 * Evidence confidence scoring
 * Forensic integrations
 * Court-ready workflows
@@ -224,14 +238,16 @@ TRACE/
 
 ## Demo Flow
 
-1. Create a Case
-2. Upload Evidence
-3. Generate Hash
-4. View Metadata
-5. Log Custody Event
-6. Verify Integrity
-7. Generate PDF Report
-8. Export Evidence Bundle
+1. Set up AI Configuration (Gemini / Ollama)
+2. Create a Case
+3. Upload Evidence
+4. Generate Hash
+5. View Metadata
+6. Log Custody Event
+7. Trigger AI Entity Extraction & Semantic Search
+8. Verify Integrity
+9. Generate PDF Report
+10. Export Evidence Bundle
 
 ---
 

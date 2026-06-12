@@ -107,3 +107,38 @@
   - [x] **Test Chain Break:** Manually modify the description of a historic log entry in the database. Trigger verification. Confirm warning displays "AUDIT LOG CHAIN BROKEN".
 - [x] **SEC-02: Path Traversal Defenses**
   - [x] Write unit test verifying that uploading files named `../../etc/passwd` does not store files outside the designated uploads directory.
+
+---
+
+## Phase 8: AI Evidence Intelligence
+
+- [ ] **AI-01: OCR Processing**
+  - [ ] Create database migration for `ocr_documents` table schema.
+  - [ ] Install and configure `tesseract.js` server-side dependencies.
+  - [ ] Implement `OcrService` to extract text from images asynchronously.
+  - [ ] Implement Express route handler for `POST /api/evidence/:id/process`.
+  - [ ] Integrate OCR status badges and text detail viewer in the UI.
+- [ ] **AI-02: Entity Extraction**
+  - [ ] Create database migration for `extracted_entities` table schema.
+  - [ ] Implement regex parsers for phone numbers, emails, URLs, UPI IDs, and transaction IDs.
+  - [ ] Implement `@google/genai` handler for Named Entity Recognition (Names, Organizations).
+  - [ ] Implement Express route handler for `GET /api/cases/:id/entities`.
+  - [ ] Build front-end grouped entity sidebar component for active cases.
+- [ ] **AI-03: Timeline Reconstruction**
+  - [ ] Create database migration for `timeline_events` table schema.
+  - [ ] Implement a reconstruction service mapping dates and event data to suggestions.
+  - [ ] Build explainability details and source-linking logic inside timeline nodes.
+  - [ ] Implement Express route handler for `GET /api/cases/:id/timeline-ai`.
+  - [ ] Add the "Advisory AI Timeline" interface component alongside custody logs.
+- [ ] **AI-04: Case Summarization**
+  - [ ] Create database migration for `case_summaries` table schema.
+  - [ ] Implement LLM summary generator prompting with fact/inference separation constraints.
+  - [ ] Embed citation links pointing to source evidence IDs in summaries.
+  - [ ] Implement Express route handler for `GET /api/cases/:id/summary` with manual regeneration support.
+  - [ ] Design and build Case Summary card and refresh controls in Case details view.
+- [ ] **AI-05: Natural Language Search**
+  - [ ] Create database migration enabling pgvector extension and `search_embeddings` table.
+  - [ ] Implement text embedding generator service using `@google/genai` model.
+  - [ ] Add vector similarity lookup queries matching user search queries.
+  - [ ] Implement Express route handler for `POST /api/search`.
+  - [ ] Add search bar and semantic match results list with highlighted text to the UI.
